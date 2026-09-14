@@ -1,5 +1,7 @@
 # Börsdata MCP Server
 
+[![Build](https://github.com/fredolss/borsdata-mcp-dotnet/actions/workflows/build.yml/badge.svg)](https://github.com/fredolss/borsdata-mcp-dotnet/actions/workflows/build.yml)
+
 A Model Context Protocol (MCP) server, written in .NET, that exposes the
 [Börsdata](https://borsdata.se) financial data API (instruments, markets,
 stock prices, KPIs, and financial reports) as MCP tools over stdio. Works
