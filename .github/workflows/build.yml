@@ -66,6 +66,22 @@ jobs:
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-linux-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
 
+      - name: Build and pack the self-contained win-x64 package
+        run: |
+          rm -rf mcpb/server/app
+          jq --arg note "Bundled as a self-contained win-x64 build — no separate .NET runtime installation is required on this machine. " '
+            .long_description = ($note + .long_description)
+            | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for Windows (x64) — no separate runtime installation needed. Requires your own Börsdata account with API access."
+            | .compatibility.platforms = ["win32"]
+            | .server.entry_point = "server/app/BorsdataMcp.exe"
+            | .server.mcp_config.command = "server/app/BorsdataMcp.exe"
+            | del(.server.mcp_config.args)
+          ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
+          dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-win-x64.mcpb"
+          cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: borsdata-mcp-${{ env.sha }}-portable.mcpb
@@ -75,6 +91,11 @@ jobs:
         with:
           name: borsdata-mcp-${{ env.sha }}-linux-x64.mcpb
           path: mcpb/borsdata-mcp-${{ env.sha }}-linux-x64.mcpb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: borsdata-mcp-${{ env.sha }}-win-x64.mcpb
+          path: mcpb/borsdata-mcp-${{ env.sha }}-win-x64.mcpb
 
   # Runs only when a `v*` tag is pushed — a deliberate, versioned release.
   # Publishes a public GitHub Release with the .mcpb attached.
@@ -121,6 +142,22 @@ jobs:
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-linux-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
 
+      - name: Build and pack the self-contained win-x64 package
+        run: |
+          rm -rf mcpb/server/app
+          jq --arg note "Bundled as a self-contained win-x64 build — no separate .NET runtime installation is required on this machine. " '
+            .long_description = ($note + .long_description)
+            | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for Windows (x64) — no separate runtime installation needed. Requires your own Börsdata account with API access."
+            | .compatibility.platforms = ["win32"]
+            | .server.entry_point = "server/app/BorsdataMcp.exe"
+            | .server.mcp_config.command = "server/app/BorsdataMcp.exe"
+            | del(.server.mcp_config.args)
+          ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
+          dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-win-x64.mcpb"
+          cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -128,5 +165,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-portable.mcpb" \
             "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-linux-x64.mcpb" \
+            "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-win-x64.mcpb" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes

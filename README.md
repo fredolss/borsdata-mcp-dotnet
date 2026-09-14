@@ -118,29 +118,33 @@ is a small zip, installed via drag-and-drop into Settings → Extensions,
 that bundles this server plus a manifest telling Claude how to launch it
 and what to ask for (the API key) at install time.
 
-Each [Release](../../releases) ships two `.mcpb` files — pick one:
+Each [Release](../../releases) ships three `.mcpb` files — pick one:
 
 - **`borsdata-mcp-<version>-linux-x64.mcpb`** — self-contained, Linux only.
   Bundles the .NET runtime itself, so nothing needs to be installed
   separately. Recommended for most Linux users. (Confirmed end-to-end on
-  Linux; Windows/macOS self-contained builds aren't published yet.)
+  Linux.)
+- **`borsdata-mcp-<version>-win-x64.mcpb`** — self-contained, Windows only.
+  Same as above but for Windows; not yet verified end-to-end there.
 - **`borsdata-mcp-<version>-portable.mcpb`** — framework-dependent, works on
   Linux/macOS/Windows, but requires the .NET 10 **runtime** (not the SDK)
   to already be installed on the machine. Smaller download; the only option
-  today for macOS/Windows, though unverified end-to-end there.
+  today for macOS (no self-contained macOS build yet), though unverified
+  end-to-end there.
 
-Or build either yourself:
+Or build any of these yourself:
 
 ```bash
 # portable (framework-dependent, needs .NET 10 runtime installed)
 dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -o mcpb/server/app
 cd mcpb && npx --yes @anthropic-ai/mcpb pack   # produces mcpb.mcpb
 
-# self-contained (bundles the runtime, linux-x64 only for now)
+# self-contained (bundles the runtime; substitute win-x64 for Windows)
 dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
 # then edit mcpb/manifest.json's server.entry_point/mcp_config.command to
-# "server/app/BorsdataMcp" (see .github/workflows/build.yml for the exact
-# jq patch CI applies) before packing
+# "server/app/BorsdataMcp" (or "server/app/BorsdataMcp.exe" for win-x64) —
+# see .github/workflows/build.yml for the exact jq patch CI applies —
+# before packing
 ```
 
 Drag it into Settings → Extensions and enter your Börsdata API key when
