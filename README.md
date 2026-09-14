@@ -17,15 +17,15 @@ with any MCP client.
 
 ## Example Queries
 
-Once connected, you can ask your AI assistant things like:
+Once connected, you can ask your AI assistant things like this in swedish:
 
-- "What instruments are listed on Stockholm Large Cap?"
-- "List all companies in the Nordic tech sector."
-- "Show me Ericsson's daily closing prices for the last 6 months."
-- "Which Swedish large-cap stocks have a P/E ratio under 15?"
-- "Compare the operating margin of Atlas Copco and SKF over the last 5 years."
-- "Get Volvo's quarterly revenue for the last 3 years."
-- "Show me Investor AB's latest balance sheet."
+- "Vilka är de största bolagen på Nasdaq Stockholm efter börsvärde?
+- "Jämför Handelsbanken och SEB - vilken är lägst värderad och lönsam?"
+- "Visa top 10 bolag på Large cap som har lägst P/E ratio just nu."
+- "Vilka svenska large-cap aktier har ett P/E under 15?"
+- "Vilka bolag på small cap hade högsta trading volume denna vecka?"
+- "Vilket bolag i finanssektorn har högsta vinstmarginal?"
+- "Hur utvecklades Hacksaw jämfört med sektorsgenomsnittet förra året?"
 
 ## Tools
 
