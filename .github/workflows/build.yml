@@ -97,6 +97,54 @@ jobs:
           name: borsdata-mcp-${{ env.sha }}-win-x64.mcpb
           path: mcpb/borsdata-mcp-${{ env.sha }}-win-x64.mcpb
 
+  # macOS runs as its own job (mirroring `package` above) because building a
+  # universal (x64+arm64) binary needs `lipo`, which only exists on macOS —
+  # unlike win-x64, this can't be cross-published from the ubuntu-latest
+  # runner the other three packages use.
+  package-macos:
+    needs: test
+    if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Stamp manifest version with the commit SHA
+        run: |
+          sha="${GITHUB_SHA:0:7}"
+          echo "sha=$sha" >> "$GITHUB_ENV"
+          tmp="$(mktemp)"
+          jq --arg v "0.0.0+$sha" '.version = $v' mcpb/manifest.json > "$tmp"
+          mv "$tmp" mcpb/manifest.json
+
+      - name: Build and pack the self-contained osx-universal package
+        run: |
+          jq --arg note "Bundled as a self-contained universal (Intel + Apple Silicon) build — no separate .NET runtime installation is required on this machine. " '
+            .long_description = ($note + .long_description)
+            | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for macOS (Intel + Apple Silicon) — no separate runtime installation needed. Requires your own Börsdata account with API access."
+            | .compatibility.platforms = ["darwin"]
+            | .server.entry_point = "server/app/BorsdataMcp"
+            | .server.mcp_config.command = "server/app/BorsdataMcp"
+            | del(.server.mcp_config.args)
+          ' mcpb/manifest.json > "$RUNNER_TEMP/manifest.darwin.json"
+          mv "$RUNNER_TEMP/manifest.darwin.json" mcpb/manifest.json
+          dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true -o "$RUNNER_TEMP/publish-osx-x64"
+          dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o "$RUNNER_TEMP/publish-osx-arm64"
+          mkdir -p mcpb/server/app
+          lipo -create -output mcpb/server/app/BorsdataMcp "$RUNNER_TEMP/publish-osx-x64/BorsdataMcp" "$RUNNER_TEMP/publish-osx-arm64/BorsdataMcp"
+          cp "$RUNNER_TEMP/publish-osx-x64/appsettings.json" mcpb/server/app/appsettings.json
+          chmod +x mcpb/server/app/BorsdataMcp
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-osx-universal.mcpb"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: borsdata-mcp-${{ env.sha }}-osx-universal.mcpb
+          path: mcpb/borsdata-mcp-${{ env.sha }}-osx-universal.mcpb
+
   # Runs only when a `v*` tag is pushed — a deliberate, versioned release.
   # Publishes a public GitHub Release with the .mcpb attached.
   release:
@@ -168,3 +216,55 @@ jobs:
             "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-win-x64.mcpb" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes
+
+  # Builds the macOS universal binary and attaches it to the release created
+  # by `release` above — needs both `test` and `release` since the release
+  # (and its notes) must already exist before an asset can be uploaded to it.
+  # A separate job from `release`, like `package-macos` above, because `lipo`
+  # only exists on macOS.
+  release-macos:
+    needs: [test, release]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Stamp manifest version from the tag
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          tmp="$(mktemp)"
+          jq --arg v "$tag_version" '.version = $v' mcpb/manifest.json > "$tmp"
+          mv "$tmp" mcpb/manifest.json
+
+      - name: Build and pack the self-contained osx-universal package
+        run: |
+          jq --arg note "Bundled as a self-contained universal (Intel + Apple Silicon) build — no separate .NET runtime installation is required on this machine. " '
+            .long_description = ($note + .long_description)
+            | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for macOS (Intel + Apple Silicon) — no separate runtime installation needed. Requires your own Börsdata account with API access."
+            | .compatibility.platforms = ["darwin"]
+            | .server.entry_point = "server/app/BorsdataMcp"
+            | .server.mcp_config.command = "server/app/BorsdataMcp"
+            | del(.server.mcp_config.args)
+          ' mcpb/manifest.json > "$RUNNER_TEMP/manifest.darwin.json"
+          mv "$RUNNER_TEMP/manifest.darwin.json" mcpb/manifest.json
+          dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true -o "$RUNNER_TEMP/publish-osx-x64"
+          dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o "$RUNNER_TEMP/publish-osx-arm64"
+          mkdir -p mcpb/server/app
+          lipo -create -output mcpb/server/app/BorsdataMcp "$RUNNER_TEMP/publish-osx-x64/BorsdataMcp" "$RUNNER_TEMP/publish-osx-arm64/BorsdataMcp"
+          cp "$RUNNER_TEMP/publish-osx-x64/appsettings.json" mcpb/server/app/appsettings.json
+          chmod +x mcpb/server/app/BorsdataMcp
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-osx-universal.mcpb"
+
+      - name: Upload asset to the existing GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-osx-universal.mcpb"

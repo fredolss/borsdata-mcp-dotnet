@@ -118,7 +118,7 @@ is a small zip, installed via drag-and-drop into Settings → Extensions,
 that bundles this server plus a manifest telling Claude how to launch it
 and what to ask for (the API key) at install time.
 
-Each [Release](../../releases) ships three `.mcpb` files — pick one:
+Each [Release](../../releases) ships four `.mcpb` files — pick one:
 
 - **`borsdata-mcp-<version>-linux-x64.mcpb`** — self-contained, Linux only.
   Bundles the .NET runtime itself, so nothing needs to be installed
@@ -126,11 +126,14 @@ Each [Release](../../releases) ships three `.mcpb` files — pick one:
   Linux.)
 - **`borsdata-mcp-<version>-win-x64.mcpb`** — self-contained, Windows only.
   Same as above but for Windows; not yet verified end-to-end there.
+- **`borsdata-mcp-<version>-osx-universal.mcpb`** — self-contained, macOS
+  only, a universal binary covering both Intel and Apple Silicon Macs. Not
+  yet verified end-to-end there.
 - **`borsdata-mcp-<version>-portable.mcpb`** — framework-dependent, works on
   Linux/macOS/Windows, but requires the .NET 10 **runtime** (not the SDK)
-  to already be installed on the machine. Smaller download; the only option
-  today for macOS (no self-contained macOS build yet), though unverified
-  end-to-end there.
+  to already be installed on the machine. Smaller download; an alternative
+  to the self-contained builds above for anyone who already has .NET
+  installed.
 
 Or build any of these yourself:
 
@@ -145,6 +148,15 @@ dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self
 # "server/app/BorsdataMcp" (or "server/app/BorsdataMcp.exe" for win-x64) —
 # see .github/workflows/build.yml for the exact jq patch CI applies —
 # before packing
+
+# self-contained universal macOS build (run on an actual Mac — needs `lipo`)
+dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r osx-x64 --self-contained true -p:PublishSingleFile=true -o publish-osx-x64
+dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r osx-arm64 --self-contained true -p:PublishSingleFile=true -o publish-osx-arm64
+mkdir -p mcpb/server/app
+lipo -create -output mcpb/server/app/BorsdataMcp publish-osx-x64/BorsdataMcp publish-osx-arm64/BorsdataMcp
+cp publish-osx-x64/appsettings.json mcpb/server/app/appsettings.json
+# then edit mcpb/manifest.json the same way as above (entry_point/command to
+# "server/app/BorsdataMcp", compatibility.platforms to ["darwin"]) before packing
 ```
 
 Drag it into Settings → Extensions and enter your Börsdata API key when
