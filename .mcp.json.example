@@ -1,0 +1,7 @@
+{
+  "mcpServers": {
+    "borsdata": {
+      "command": "/absolute/path/to/borsdata-mcp-dotnet/run-dev.sh"
+    }
+  }
+}

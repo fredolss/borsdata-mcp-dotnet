@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BorsdataMcp/BorsdataMcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BorsdataMcp.Tests/BorsdataMcp.Tests.csproj" />
+  </Folder>
+</Solution>

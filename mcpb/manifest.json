@@ -1,0 +1,62 @@
+{
+  "manifest_version": "0.3",
+  "name": "borsdata-mcp-dotnet",
+  "display_name": "Börsdata",
+  "version": "0.0.0",
+  "description": "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled .NET app. Requires your own Börsdata account with API access.",
+  "long_description": "Bundles a framework-dependent dotnet publish of the borsdata-mcp-dotnet server directly in this .mcpb. Requires the .NET 10 runtime to be installed on this machine (not the SDK). No separate build step for the end user — the app is built into the bundle at packaging time (see .github/workflows/build.yml).\n\nThis extension does not include a Börsdata subscription or API key of its own. You need your own Börsdata account with API access (https://borsdata.se) and must enter your own API key below — the server will not work without one.\n\nDisclaimer: this is an unofficial, community-built project and is not affiliated with, endorsed by, or sponsored by Börsdata AB. \"Börsdata\" is a trademark of Börsdata AB, used here only to describe compatibility with their public API. You are responsible for your own Börsdata subscription, API key, and compliance with Börsdata's own terms of service. This software is provided as-is, without warranty of any kind.",
+  "author": {
+    "name": "Fredrik Olsson"
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/app/BorsdataMcp.dll",
+    "mcp_config": {
+      "command": "dotnet",
+      "args": ["${__dirname}/server/app/BorsdataMcp.dll"],
+      "env": {
+        "Borsdata__ApiKey": "${user_config.api_key}"
+      }
+    }
+  },
+  "user_config": {
+    "api_key": {
+      "type": "string",
+      "title": "Börsdata API Key",
+      "description": "Your own Börsdata API key. Requires an active Börsdata account with API access (https://borsdata.se/en/insights/api) — not included with this extension.",
+      "sensitive": true,
+      "required": true
+    }
+  },
+  "tools": [
+    { "name": "list_instruments", "description": "Lists instruments (stocks/funds) on Börsdata, with search and market/sector/country filters." },
+    { "name": "list_markets", "description": "Lists all markets known to Börsdata." },
+    { "name": "list_branches", "description": "Lists all industry branches known to Börsdata." },
+    { "name": "list_sectors", "description": "Lists all sectors known to Börsdata." },
+    { "name": "list_countries", "description": "Lists all countries known to Börsdata." },
+    { "name": "list_kpi_metadata", "description": "Lists all KPIs known to Börsdata, for looking up a KPI's id." },
+    { "name": "list_report_metadata", "description": "Lists metadata for every field returned by financial reports." },
+    { "name": "list_translation_metadata", "description": "Lists Börsdata's translation table for coded labels across the API." },
+    { "name": "get_stock_splits", "description": "Stock splits and reverse splits across all instruments." },
+    { "name": "get_instruments_updated", "description": "Last-updated timestamps for recently-updated instruments." },
+    { "name": "get_kpis_updated", "description": "The global timestamp for when KPI calculations were last refreshed." },
+    { "name": "get_stock_prices", "description": "Daily stock price history for one instrument." },
+    { "name": "get_latest_stock_prices", "description": "The latest daily price for every instrument in one call." },
+    { "name": "get_stock_prices_by_date", "description": "Every instrument's price on a specific historical date." },
+    { "name": "get_kpi_screener", "description": "A calculated KPI value for one instrument." },
+    { "name": "get_kpi_history", "description": "How a KPI has trended over time for one instrument." },
+    { "name": "get_kpi_summary", "description": "Every KPI for one instrument across multiple periods." },
+    { "name": "get_reports", "description": "Financial reports (income statement, balance sheet, cash flow) for one instrument." },
+    { "name": "get_kpi_list_screener", "description": "A calculated KPI value for every instrument, for market-wide screening." },
+    { "name": "get_report_calendar", "description": "Report release dates for specified instruments." },
+    { "name": "get_dividend_calendar", "description": "Dividend ex-dates and amounts for specified instruments." },
+    { "name": "get_insider_holdings", "description": "Insider transactions for specified instruments." },
+    { "name": "get_buyback_holdings", "description": "Share buyback transactions for specified instruments." },
+    { "name": "get_short_holdings", "description": "Short-position data across Nordic instruments." }
+  ],
+  "keywords": ["borsdata", "finance", "stocks"],
+  "license": "MIT",
+  "compatibility": {
+    "platforms": ["linux", "darwin", "win32"]
+  }
+}
