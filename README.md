@@ -61,8 +61,9 @@ by every other tool that operates on a specific instrument.
 
 ## Requirements
 
-- .NET 10 SDK (building/running from source) — the `.mcpb` Desktop Extension
-  below only needs the .NET 10 **runtime**
+- .NET 10 SDK (building/running from source) — the self-contained `.mcpb`
+  Desktop Extension below needs no .NET installed at all; only the
+  `-portable` variant needs the .NET 10 **runtime**
 - Your own Börsdata account with API access ([borsdata.se](https://borsdata.se))
   and its API key. **This is required for every user, individually** — there
   is no shared or bundled key; each installation talks to Börsdata under its
@@ -115,21 +116,35 @@ only reads MCP servers from a remote Connectors registry, not a local
 config file. A [Desktop Extension](https://claude.com/docs/connectors/building/mcpb)
 is a small zip, installed via drag-and-drop into Settings → Extensions,
 that bundles this server plus a manifest telling Claude how to launch it
-and what to ask for (the API key) at install time. Requires only the
-.NET 10 **runtime** (not the SDK) on the installing machine.
+and what to ask for (the API key) at install time.
 
-Grab the latest `.mcpb` from [Releases](../../releases), or build it
-yourself:
+Each [Release](../../releases) ships two `.mcpb` files — pick one:
+
+- **`borsdata-mcp-<version>-linux-x64.mcpb`** — self-contained, Linux only.
+  Bundles the .NET runtime itself, so nothing needs to be installed
+  separately. Recommended for most Linux users. (Confirmed end-to-end on
+  Linux; Windows/macOS self-contained builds aren't published yet.)
+- **`borsdata-mcp-<version>-portable.mcpb`** — framework-dependent, works on
+  Linux/macOS/Windows, but requires the .NET 10 **runtime** (not the SDK)
+  to already be installed on the machine. Smaller download; the only option
+  today for macOS/Windows, though unverified end-to-end there.
+
+Or build either yourself:
 
 ```bash
+# portable (framework-dependent, needs .NET 10 runtime installed)
 dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -o mcpb/server/app
 cd mcpb && npx --yes @anthropic-ai/mcpb pack   # produces mcpb.mcpb
+
+# self-contained (bundles the runtime, linux-x64 only for now)
+dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
+# then edit mcpb/manifest.json's server.entry_point/mcp_config.command to
+# "server/app/BorsdataMcp" (see .github/workflows/build.yml for the exact
+# jq patch CI applies) before packing
 ```
 
 Drag it into Settings → Extensions and enter your Börsdata API key when
-prompted (collected by the install UI, not read from `.env`). Verified
-end-to-end on Linux; macOS/Windows should work the same way but haven't
-been tested there.
+prompted (collected by the install UI, not read from `.env`).
 
 > **You need your own Börsdata account with API access to use this
 > extension.** It does not come with a Börsdata subscription or API key —
