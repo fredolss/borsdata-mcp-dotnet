@@ -13,7 +13,11 @@ public static class ReferenceDataTools
         "Prefer search and/or the id filters to narrow results — calling this with no filters " +
         "returns every instrument on Börsdata (several thousand) in one response. Use maxCount " +
         "to cap the number returned; the response's totalMatched field tells you whether more " +
-        "instruments matched than were returned.")]
+        "instruments matched than were returned. By default this only searches Börsdata's Nordic " +
+        "instrument list — a search for a non-Nordic company/ticker (e.g. a US, Canadian, or other " +
+        "international listing) will come back with totalMatched: 0 even though Börsdata covers it. " +
+        "If a search returns no match, retry the same search with includeGlobal: true before " +
+        "concluding the instrument isn't on Börsdata.")]
     public static async Task<string> ListInstruments(
         BorsdataApiClient client,
         [Description("Case-insensitive substring match against the instrument's name, ticker, or ISIN. Optional.")]
