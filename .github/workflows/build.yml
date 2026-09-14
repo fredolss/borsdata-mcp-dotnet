@@ -28,6 +28,7 @@ jobs:
     needs: test
     if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -47,7 +48,7 @@ jobs:
       - name: Build and pack the portable (framework-dependent) package
         run: |
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -o mcpb/server/app
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-portable.mcpb"
 
       - name: Build and pack the self-contained linux-x64 package
@@ -62,7 +63,7 @@ jobs:
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-linux-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
 
@@ -78,7 +79,7 @@ jobs:
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-win-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
 
@@ -105,6 +106,7 @@ jobs:
     needs: test
     if: ${{ !startsWith(github.ref, 'refs/tags/') && github.event_name != 'pull_request' }}
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -137,7 +139,7 @@ jobs:
           lipo -create -output mcpb/server/app/BorsdataMcp "$RUNNER_TEMP/publish-osx-x64/BorsdataMcp" "$RUNNER_TEMP/publish-osx-arm64/BorsdataMcp"
           cp "$RUNNER_TEMP/publish-osx-x64/appsettings.json" mcpb/server/app/appsettings.json
           chmod +x mcpb/server/app/BorsdataMcp
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-osx-universal.mcpb"
 
       - uses: actions/upload-artifact@v4
@@ -151,6 +153,7 @@ jobs:
     needs: test
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -171,7 +174,7 @@ jobs:
       - name: Build and pack the portable (framework-dependent) package
         run: |
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -o mcpb/server/app
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-portable.mcpb"
 
       - name: Build and pack the self-contained linux-x64 package
@@ -186,7 +189,7 @@ jobs:
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-linux-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
 
@@ -202,7 +205,7 @@ jobs:
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-win-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
 
@@ -226,6 +229,7 @@ jobs:
     needs: [test, release]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: macos-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -259,7 +263,7 @@ jobs:
           lipo -create -output mcpb/server/app/BorsdataMcp "$RUNNER_TEMP/publish-osx-x64/BorsdataMcp" "$RUNNER_TEMP/publish-osx-arm64/BorsdataMcp"
           cp "$RUNNER_TEMP/publish-osx-x64/appsettings.json" mcpb/server/app/appsettings.json
           chmod +x mcpb/server/app/BorsdataMcp
-          (cd mcpb && npx --yes @anthropic-ai/mcpb pack)
+          (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-osx-universal.mcpb"
 
       - name: Upload asset to the existing GitHub Release
