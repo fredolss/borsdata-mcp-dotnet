@@ -555,7 +555,7 @@ for why, if you're tempted to reintroduce it for this project.
   dev builds are distinguishable — they used to all ship as identical
   `0.0.0`s, making it impossible to tell which commit produced a given
   artifact), `release` stamps the tag's version.
-  - `display_name` is `"Börsdata"` (with "ö") — the real project/API name.
+  - `display_name` is `"Borsdata"` (plain ASCII, no "ö") as of 2026-09-14.
     A one-off failure in a Claude chat surface (`Tool
     'Börsdata:list_instruments' not found`, a literal escaped-unicode
     string apparently never decoded back before being used as a lookup
@@ -564,12 +564,35 @@ for why, if you're tempted to reintroduce it for this project.
     sanitized spellings of the same server (`mcp__B_rsdata__...` vs
     `mcp__borsdata__...`) seemed to back that up. `display_name` was
     changed to plain-ASCII `"Borsdata"` for a couple of commits on that
-    theory. **Confirmed live it was wrong**: reverting back to `"Börsdata"`
-    and rerunning the exact same failing query worked with no error and no
-    other change — so the failure was some other transient/stale-state
-    glitch (most likely tied to the extension reinstall itself, not the
-    character), not a deterministic bug tied to "ö". Left as `"Börsdata"`
-    since that's the correct name and the theory that justified changing
-    it didn't hold up. If a similar "tool not found" error resurfaces,
-    don't reflexively blame the display name again without a live retest
-    like this one — it wasn't reproducible.
+    theory, then reverted: rerunning the exact same failing query worked
+    with no error and no other change, which at the time read as the
+    failure being some other transient/stale-state glitch (most likely
+    tied to the extension reinstall itself), not a deterministic bug tied
+    to "ö". Left as `"Börsdata"` on that basis, with a note not to
+    reflexively blame the display name again without a live retest.
+    **That call didn't hold up**: the identical `Tool 'Börsdata:...'
+    not found` failure recurred later (2026-09-14, reported by the user
+    with a screenshot from a separate Claude chat surface, against the
+    then-latest `main`), on a fresh `list_instruments` call this time —
+    not a coincidental repeat of the earlier query. This session couldn't
+    drive that chat surface to live-retest the same way the original
+    investigation did, but it independently reproduced the *other* half of
+    the original evidence live, in this session's own tool listing: the
+    Claude Desktop app hosting this Code tab had both the installed
+    `.mcpb` extension (registered as `"Börsdata"`, sanitized by whatever
+    client-side logic to `B_rsdata`) and this repo's own local
+    `.mcp.json` server (registered as `"borsdata"`, already plain ASCII)
+    connected at once, surfacing as two separate tool prefixes for the
+    same underlying server. Two independent live occurrences of the same
+    specific symptom, both correlated with the non-ASCII `display_name`,
+    was judged enough to act on even without a fresh in-chat-surface
+    retest — `display_name` was changed back to plain-ASCII `"Borsdata"`.
+    Root cause is still not fully nailed down (likely something in that
+    chat surface's tool-search/dispatch pipeline unicode-escaping the
+    qualified tool name for lookup without decoding it back, rather than
+    anything Börsdata-API- or dotnet-side), and this is a workaround, not
+    a fix for that pipeline. If it recurs *again* after this change ships
+    in an installed extension, the "ö" theory is genuinely dead and the
+    actual cause needs to be found elsewhere (e.g. via the client
+    surface's own bug-report channel) rather than toggled back and forth
+    a third time.
