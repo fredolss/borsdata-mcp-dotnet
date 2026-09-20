@@ -130,11 +130,62 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_NoFilters_ReturnsAllAndEnrichesWithTickerAndName()
+    public async Task GetKpiListScreener_FiltersByInstrumentIds()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+            client, kpiId: 2, calcGroup: "last", calc: "latest", instrumentIds: "1,3"))!;
+
+        Assert.Equal(2, result["totalMatched"]!.GetValue<int>());
+        var insIds = result["values"]!.AsArray().Select(v => v!["insId"]!.GetValue<int>()).ToList();
+        Assert.Equal([3, 1], insIds);
+    }
+
+    [Fact]
+    public async Task GetKpiListScreener_CombinesInstrumentIdsAndMarketId_AsAnAndFilter()
+    {
+        var client = CreateClient(out _);
+
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+            client, kpiId: 2, calcGroup: "last", calc: "latest", instrumentIds: "1,2,3", marketId: 1))!;
+
+        // insId 3 matches instrumentIds but not marketId 1, so it's excluded.
+        Assert.Equal(2, result["totalMatched"]!.GetValue<int>());
+        var insIds = result["values"]!.AsArray().Select(v => v!["insId"]!.GetValue<int>()).ToList();
+        Assert.Equal([1, 2], insIds);
+    }
+
+    [Fact]
+    public async Task GetKpiListScreener_SortDescending_NullsStillLast()
+    {
+        var client = CreateClient(out _);
+
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+            client, kpiId: 2, calcGroup: "last", calc: "latest", instrumentIds: "1,2,3,4,999", sortDescending: true))!;
+
+        var insIds = result["values"]!.AsArray().Select(v => v!["insId"]!.GetValue<int>()).ToList();
+        Assert.Equal([2, 1, 3, 999, 4], insIds);
+    }
+
+    [Fact]
+    public async Task GetKpiListScreener_MaxCountCapsReturned_ButNotTotalMatched()
+    {
+        var client = CreateClient(out _);
+
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+            client, kpiId: 2, calcGroup: "last", calc: "latest", instrumentIds: "1,2,3,4,999", maxCount: 2))!;
+
+        Assert.Equal(5, result["totalMatched"]!.GetValue<int>());
+        Assert.Equal(2, result["returned"]!.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task GetKpiListScreenerAllInstruments_NoFilters_ReturnsAllAndEnrichesWithTickerAndName()
+    {
+        var client = CreateClient(out _);
+
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
 
         Assert.Equal(5, result["totalMatched"]!.GetValue<int>());
         // Ascending sort puts the lowest value (insId 999, value 5.0) first.
@@ -150,22 +201,22 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_SortsAscendingByDefault_NullsLast()
+    public async Task GetKpiListScreenerAllInstruments_SortsAscendingByDefault_NullsLast()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
 
         var insIds = result["values"]!.AsArray().Select(v => v!["insId"]!.GetValue<int>()).ToList();
         Assert.Equal([999, 3, 1, 2, 4], insIds);
     }
 
     [Fact]
-    public async Task GetKpiListScreener_SortDescending_NullsStillLast()
+    public async Task GetKpiListScreenerAllInstruments_SortDescending_NullsStillLast()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(
             client, kpiId: 2, calcGroup: "last", calc: "latest", sortDescending: true))!;
 
         var insIds = result["values"]!.AsArray().Select(v => v!["insId"]!.GetValue<int>()).ToList();
@@ -173,24 +224,26 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_FiltersByInstrumentIds()
+    public async Task GetKpiListScreenerAllInstruments_FiltersByMarketId_WithoutNeedingListInstrumentsFirst()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
-            client, kpiId: 2, calcGroup: "last", calc: "latest", instrumentIds: "1,3"))!;
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(
+            client, kpiId: 2, calcGroup: "last", calc: "latest", marketId: 1))!;
 
-        Assert.Equal(2, result["totalMatched"]!.GetValue<int>());
+        // insIds 1, 2, 4 are marketId 1; insId 3 is marketId 2; insId 999 has no instrument
+        // record at all, so an attribute filter excludes it even though it has a KPI value.
+        Assert.Equal(3, result["totalMatched"]!.GetValue<int>());
         var insIds = result["values"]!.AsArray().Select(v => v!["insId"]!.GetValue<int>()).ToList();
-        Assert.Equal([3, 1], insIds);
+        Assert.Equal([1, 2, 4], insIds);
     }
 
     [Fact]
-    public async Task GetKpiListScreener_FiltersByMinAndMaxValue()
+    public async Task GetKpiListScreenerAllInstruments_FiltersByMinAndMaxValue()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(
             client, kpiId: 2, calcGroup: "last", calc: "latest", minValue: 10, maxValue: 15))!;
 
         Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
@@ -198,11 +251,11 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_MaxCountCapsReturned_ButNotTotalMatched()
+    public async Task GetKpiListScreenerAllInstruments_MaxCountCapsReturned_ButNotTotalMatched()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(
             client, kpiId: 2, calcGroup: "last", calc: "latest", maxCount: 2))!;
 
         Assert.Equal(5, result["totalMatched"]!.GetValue<int>());
@@ -210,11 +263,11 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_UnknownInsId_OmitsTickerAndNameButKeepsValue()
+    public async Task GetKpiListScreenerAllInstruments_UnknownInsId_OmitsTickerAndNameButKeepsValue()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
 
         var unknown = result["values"]!.AsArray().Single(v => v!["insId"]!.GetValue<int>() == 999);
         Assert.Null(unknown!["name"]);
@@ -222,23 +275,23 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_StringOnlyValue_IsSurfacedAsStringValue()
+    public async Task GetKpiListScreenerAllInstruments_StringOnlyValue_IsSurfacedAsStringValue()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest"))!;
 
         var stringEntry = result["values"]!.AsArray().Single(v => v!["insId"]!.GetValue<int>() == 4);
         Assert.Equal("N/A", stringEntry!["value"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task GetKpiListScreener_UsesCachedInstruments_DoesNotRefetchOnSecondCall()
+    public async Task GetKpiListScreenerAllInstruments_UsesCachedInstruments_DoesNotRefetchOnSecondCall()
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest");
-        await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest");
+        await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest");
+        await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest");
 
         // 1 KPI-list fetch (now cached with a short TTL — values only change once per trading day)
         // + 1 instruments fetch (cached) = 2 total across both calls.
@@ -246,21 +299,21 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_GlobalFalse_NeverRequestsGlobalUrls()
+    public async Task GetKpiListScreenerAllInstruments_GlobalFalse_NeverRequestsGlobalUrls()
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest");
+        await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest");
 
         Assert.All(stub.RequestUris, u => Assert.DoesNotContain("/global/", u.AbsolutePath));
     }
 
     [Fact]
-    public async Task GetKpiListScreener_GlobalTrue_SwitchesDataSourceAndEnrichment()
+    public async Task GetKpiListScreenerAllInstruments_GlobalTrue_SwitchesDataSourceAndEnrichment()
     {
         var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreener(
+        var result = JsonNode.Parse(await MarketDataTools.GetKpiListScreenerAllInstruments(
             client, kpiId: 2, calcGroup: "last", calc: "latest", global: true))!;
 
         Assert.Contains(stub.RequestUris, u => u.AbsolutePath == "/v1/instruments/global/kpis/2/last/latest");
@@ -272,11 +325,11 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetKpiListScreener_GlobalTrue_DoesNotAlsoFetchNordicData()
+    public async Task GetKpiListScreenerAllInstruments_GlobalTrue_DoesNotAlsoFetchNordicData()
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetKpiListScreener(client, kpiId: 2, calcGroup: "last", calc: "latest", global: true);
+        await MarketDataTools.GetKpiListScreenerAllInstruments(client, kpiId: 2, calcGroup: "last", calc: "latest", global: true);
 
         // Just the global values-fetch + the global instruments-fetch — no Nordic fetch at all.
         Assert.Equal(2, stub.CallCount);

@@ -235,7 +235,51 @@ for why, if you're tempted to reintroduce it for this project.
     and the same nullable/uncapped `maxCount` convention as
     `ListInstruments` — for the same reason: this endpoint has the exact
     same "several thousand entries in one response" problem `ListInstruments`
-    had, just for KPI values instead of instrument metadata.
+    had, just for KPI values instead of instrument metadata. Also takes
+    `marketId`/`countryId`/`sectorId`/`branchId` (same ids as
+    `ListInstruments`' own filters), resolved against the cached instrument
+    list via `InstrumentLookup.FilterIdsByAttributes` and ANDed with
+    `instrumentIds` if both are given — added after confirming live,
+    repeatedly, that a calling model would resolve a market's insIds via
+    `ListInstruments` and then still call this tool without them, screening
+    the entire ~14,000-instrument universe; letting this endpoint filter by
+    the same attributes itself removes the two-call chain that kept getting
+    skipped.
+  - **`GetKpiListScreener` requires `instrumentIds`** (not optional) and
+    `GetKpiListScreenerAllInstruments` is a second, separate tool for when
+    there genuinely are none — a split made after *three* rounds of
+    progressively more explicit `[Description]` wording (v1: "prefer
+    instrumentIds to keep the response small" — this backfired, see below;
+    v2: an explicit "STEP 1/STEP 2" instruction to always chain
+    `ListInstruments` → `instrumentIds`; v3: "ONE call is enough" moved to
+    the very first sentence) all failed to reliably stop a real Claude
+    Desktop chat session from calling this tool without `instrumentIds` it
+    had already resolved in the same conversation, confirmed live across
+    multiple separate sessions — including one where the *very build*
+    containing v3's wording and the new attribute-filter params was
+    installed and active, and the model still ignored `marketId` entirely
+    and called the tool bare. Optional parameters are, in practice, a
+    suggestion a calling model can silently ignore no matter how the prose
+    is worded; a required parameter is a schema validation failure the
+    client cannot skip. Splitting into two tools also plays to what
+    tool-calling models are empirically more reliable at — picking the
+    right tool by name from a short list — rather than correctly deciding
+    whether to populate one optional field inside a multi-purpose tool.
+    `GetKpiListScreenerAllInstruments` has no `instrumentIds` parameter at
+    all (not just an unused optional one) and its own `[Description]`
+    explicitly redirects: if the caller already has `instrumentIds`, use
+    `GetKpiListScreener` instead, since only that tool actually applies
+    them. The earlier, related finding that `minValue`/`maxValue` also got
+    invented unprompted (the v1 wording literally suggested them as a
+    response-size knob, which was wrong — they're a value filter, not a
+    truncation control) is addressed the same way on both tools: their
+    `[Description]`s now say to only set them when the user's request
+    states an actual numeric threshold, never to shrink output. Both tools
+    share the same private `BuildKpiListScreenerResult` helper (which still
+    takes a nullable `instrumentIds` internally — `GetKpiListScreener`
+    always passes a non-null value, `GetKpiListScreenerAllInstruments`
+    always passes `null`), so there's no duplicated filtering/sorting/
+    enrichment logic between them, only duplicated parameter surface.
   - `GetLatestStockPrices`, `GetStockPricesByDate`, and `GetKpiListScreener`
     each additionally take an optional `global` bool (default `false`).
     Unlike `ListInstruments`' `includeGlobal`, this *switches* the data

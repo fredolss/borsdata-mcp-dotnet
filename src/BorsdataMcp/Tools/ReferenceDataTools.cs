@@ -23,8 +23,9 @@ public static class ReferenceDataTools
         [Description("Case-insensitive substring match against the instrument's name, ticker, or ISIN. Optional.")]
         string? search = null,
         [Description("Filter to instruments on this market id, from list_markets. Optional. To screen a KPI " +
-            "(e.g. P/E) across just this market, pass the resulting insIds as get_kpi_list_screener's " +
-            "instrumentIds — that endpoint has no market filter of its own.")]
+            "(e.g. P/E) across just this market with no other instrumentIds in hand, pass marketId directly " +
+            "to get_kpi_list_screener_all_instruments instead — it takes the same market/country/sector/branch " +
+            "filters natively, no need to resolve insIds here first.")]
         int? marketId = null,
         [Description("Filter to instruments in this country id, from list_countries. Optional.")]
         int? countryId = null,
@@ -130,7 +131,7 @@ public static class ReferenceDataTools
     public static async Task<string> ListCountries(BorsdataApiClient client, CancellationToken cancellationToken) =>
         (await client.GetCountriesAsync(cancellationToken))?.ToJsonString() ?? "{}";
 
-    [McpServerTool, Description("Lists all KPIs known to Börsdata (kpiId, Swedish/English name, display format, whether the value is a string). Use this to find the kpiId for get_kpi_screener/get_kpi_history/get_kpi_list_screener — e.g. P/E, dividend yield.")]
+    [McpServerTool, Description("Lists all KPIs known to Börsdata (kpiId, Swedish/English name, display format, whether the value is a string). Use this to find the kpiId for get_kpi_screener/get_kpi_history/get_kpi_list_screener/get_kpi_list_screener_all_instruments — e.g. P/E, dividend yield.")]
     public static async Task<string> ListKpiMetadata(BorsdataApiClient client, CancellationToken cancellationToken) =>
         (await client.GetKpiMetadataAsync(cancellationToken))?.ToJsonString() ?? "{}";
 

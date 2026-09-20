@@ -162,32 +162,48 @@ public static class MarketDataTools
         (await client.GetReportsAsync(instrumentId, reportType, cancellationToken))?.ToJsonString() ?? "{}";
 
     [McpServerTool, Description(
-        "Gets a calculated KPI value (e.g. P/E) for every instrument on Börsdata in one call — the " +
-        "KPI screener across the whole market. Useful for screening (e.g. \"which companies have " +
-        "P/E under 15\") or for checking one KPI across a specific set of holdings. kpiId/calcGroup/" +
-        "calc identify the metric per the Börsdata KPI reference (https://borsdata.se/en/insights/api). " +
-        "This endpoint has no server-side market/sector/country filter — if the request is scoped to " +
-        "a specific market/sector/country/branch (e.g. \"Swedish large cap\"), first call list_instruments " +
-        "with that filter (e.g. marketId) to resolve the matching insIds, then pass them as " +
-        "instrumentIds here; without that, this screens Börsdata's *entire* universe and the result " +
-        "will include instruments outside the requested scope. Without instrumentIds or value bounds " +
-        "this covers roughly 14,000 instruments — prefer instrumentIds and/or minValue/maxValue/" +
-        "maxCount to keep the response small. Each result includes ticker/name alongside insId so a " +
-        "second lookup isn't needed. For shorting/short-interest data specifically, use " +
-        "get_short_holdings instead — it doesn't require guessing a kpiId/calcGroup/calc combination.")]
+        "Gets a calculated KPI value (e.g. P/E) for a specific set of instruments in one call. " +
+        "instrumentIds is required here — always pass every insId you already have (e.g. resolved " +
+        "via a prior list_instruments call, a holdings list, or search results); never drop them and " +
+        "call get_kpi_list_screener_all_instruments instead, since only THIS tool actually applies " +
+        "them. marketId/countryId/sectorId/branchId (same ids as list_instruments) narrow further on " +
+        "top of instrumentIds if given, resolved server-side — no separate list_instruments call " +
+        "needed just for that. kpiId/calcGroup/calc identify the metric per the Börsdata KPI " +
+        "reference (https://borsdata.se/en/insights/api). Only set minValue/maxValue if the user's " +
+        "request itself states a numeric threshold (e.g. \"P/E under 15\") — never invent one just to " +
+        "narrow or shrink the results; use maxCount (row limit) for that instead. Each result " +
+        "includes ticker/name alongside insId. For a market-wide screen where you do NOT already " +
+        "have specific instrumentIds, use get_kpi_list_screener_all_instruments instead. For " +
+        "shorting/short-interest data specifically, use get_short_holdings instead — it doesn't " +
+        "require guessing a kpiId/calcGroup/calc combination.")]
     public static async Task<string> GetKpiListScreener(
         BorsdataApiClient client,
         [Description("The Börsdata KPI id, e.g. 2 for P/E.")] int kpiId,
         [Description("The calculation group, e.g. 'last', 'quarter', 'year', '1year', '3year'.")] string calcGroup,
         [Description("The calculation, e.g. 'latest', 'mean', 'high', 'low'.")] string calc,
-        [Description("Comma-separated instrument insIds to restrict results to — e.g. a set of holdings, or " +
-            "the insIds from a list_instruments call filtered by marketId/countryId/sectorId/branchId when " +
-            "the request is scoped to a specific market/sector/country (pass those ids here, don't skip " +
-            "this step). Optional — omit only to intentionally screen every instrument.")]
-        string? instrumentIds = null,
-        [Description("Only include instruments whose value is greater than or equal to this. Optional.")]
+        [Description("Comma-separated instrument insIds to screen — required. Pass every insId you already " +
+            "have (e.g. from a prior list_instruments call, a holdings list, or search results); never omit " +
+            "ids you already resolved. If you genuinely have no specific instrumentIds yet, use " +
+            "get_kpi_list_screener_all_instruments instead rather than passing a placeholder value here.")]
+        string instrumentIds,
+        [Description("Filter to instruments on this market id, from list_markets (e.g. Stockholm Large Cap). " +
+            "Narrows further on top of instrumentIds; resolved server-side. Optional.")]
+        int? marketId = null,
+        [Description("Filter to instruments in this country id, from list_countries. Optional.")]
+        int? countryId = null,
+        [Description("Filter to instruments in this sector id, from list_sectors. Optional.")]
+        int? sectorId = null,
+        [Description("Filter to instruments in this industry branch id, from list_branches. Optional.")]
+        int? branchId = null,
+        [Description("Only include instruments whose value is greater than or equal to this. A real filter " +
+            "that changes the result set — only set this when the user actually asked for a value " +
+            "threshold (e.g. \"dividend yield above 5%\" -> minValue: 5). Do not set it just to reduce " +
+            "response size; use maxCount for that. Optional.")]
         double? minValue = null,
-        [Description("Only include instruments whose value is less than or equal to this. Optional.")]
+        [Description("Only include instruments whose value is less than or equal to this. A real filter " +
+            "that changes the result set — only set this when the user actually asked for a value " +
+            "threshold (e.g. \"P/E under 15\" -> maxValue: 15). Do not set it just to reduce response size; " +
+            "use maxCount for that. Optional.")]
         double? maxValue = null,
         [Description("Sort by value descending instead of the default ascending. Default false.")]
         bool sortDescending = false,
@@ -207,16 +223,81 @@ public static class MarketDataTools
             ? await client.GetGlobalInstrumentsAsync(cancellationToken)
             : await client.GetInstrumentsAsync(cancellationToken);
         return BuildKpiListScreenerResult(
-            values, instruments, kpiId, calcGroup, calc, instrumentIds, minValue, maxValue, sortDescending, maxCount).ToJsonString();
+            values, instruments, kpiId, calcGroup, calc, instrumentIds, marketId, countryId, sectorId, branchId,
+            minValue, maxValue, sortDescending, maxCount).ToJsonString();
+    }
+
+    [McpServerTool, Description(
+        "Gets a calculated KPI value (e.g. P/E) for every instrument on Börsdata in one call, " +
+        "optionally narrowed by marketId/countryId/sectorId/branchId (same ids as list_instruments, " +
+        "resolved server-side — no separate list_instruments call needed). If you already have " +
+        "specific instrumentIds — e.g. resolved via a prior list_instruments call, a holdings list, " +
+        "or search — do NOT use this tool: use get_kpi_list_screener instead (it requires " +
+        "instrumentIds), since calling this tool instead silently drops them and screens a broader " +
+        "universe than intended. Use this tool only when there is genuinely no specific instrumentIds " +
+        "list: a whole-market screen, or one scoped purely by market/sector/country/branch. kpiId/" +
+        "calcGroup/calc identify the metric per the Börsdata KPI reference " +
+        "(https://borsdata.se/en/insights/api). Only set minValue/maxValue if the user's request " +
+        "itself states a numeric threshold (e.g. \"P/E under 15\") — never invent one just to narrow " +
+        "or shrink the results; use the filters above and/or maxCount (row limit) for that instead. " +
+        "Each result includes ticker/name alongside insId. For shorting/short-interest data " +
+        "specifically, use get_short_holdings instead — it doesn't require guessing a kpiId/" +
+        "calcGroup/calc combination.")]
+    public static async Task<string> GetKpiListScreenerAllInstruments(
+        BorsdataApiClient client,
+        [Description("The Börsdata KPI id, e.g. 2 for P/E.")] int kpiId,
+        [Description("The calculation group, e.g. 'last', 'quarter', 'year', '1year', '3year'.")] string calcGroup,
+        [Description("The calculation, e.g. 'latest', 'mean', 'high', 'low'.")] string calc,
+        [Description("Filter to instruments on this market id, from list_markets (e.g. Stockholm Large Cap). " +
+            "Resolved server-side — no need to call list_instruments first. Optional.")]
+        int? marketId = null,
+        [Description("Filter to instruments in this country id, from list_countries. Optional.")]
+        int? countryId = null,
+        [Description("Filter to instruments in this sector id, from list_sectors. Optional.")]
+        int? sectorId = null,
+        [Description("Filter to instruments in this industry branch id, from list_branches. Optional.")]
+        int? branchId = null,
+        [Description("Only include instruments whose value is greater than or equal to this. A real filter " +
+            "that changes the result set — only set this when the user actually asked for a value " +
+            "threshold (e.g. \"dividend yield above 5%\" -> minValue: 5). Do not set it just to reduce " +
+            "response size; use the filters above and/or maxCount for that. Optional.")]
+        double? minValue = null,
+        [Description("Only include instruments whose value is less than or equal to this. A real filter " +
+            "that changes the result set — only set this when the user actually asked for a value " +
+            "threshold (e.g. \"P/E under 15\" -> maxValue: 15). Do not set it just to reduce response size; " +
+            "use the filters above and/or maxCount for that. Optional.")]
+        double? maxValue = null,
+        [Description("Sort by value descending instead of the default ascending. Default false.")]
+        bool sortDescending = false,
+        [Description("Query Börsdata's global (non-Nordic, Pro+) instrument universe instead of " +
+            "the default Nordic one. Switches the data source rather than merging it — unlike " +
+            "list_instruments' includeGlobal, since this endpoint isn't cached and merging by " +
+            "default would double live API traffic and payload size on every call. Default false.")]
+        bool global = false,
+        [Description("Maximum number of results to return. Omit to return all matches.")]
+        int? maxCount = null,
+        CancellationToken cancellationToken = default)
+    {
+        var values = global
+            ? await client.GetGlobalKpiListScreenerAsync(kpiId, calcGroup, calc, cancellationToken)
+            : await client.GetKpiListScreenerAsync(kpiId, calcGroup, calc, cancellationToken);
+        var instruments = global
+            ? await client.GetGlobalInstrumentsAsync(cancellationToken)
+            : await client.GetInstrumentsAsync(cancellationToken);
+        return BuildKpiListScreenerResult(
+            values, instruments, kpiId, calcGroup, calc, instrumentIds: null, marketId, countryId, sectorId, branchId,
+            minValue, maxValue, sortDescending, maxCount).ToJsonString();
     }
 
     private static JsonObject BuildKpiListScreenerResult(
         JsonNode? valuesRoot, JsonNode? instrumentsRoot, int kpiId, string calcGroup, string calc,
-        string? instrumentIds, double? minValue, double? maxValue, bool sortDescending, int? maxCount)
+        string? instrumentIds, int? marketId, int? countryId, int? sectorId, int? branchId,
+        double? minValue, double? maxValue, bool sortDescending, int? maxCount)
     {
         var rawValues = (valuesRoot as JsonObject)?["values"] as JsonArray ?? [];
         var instrumentIndex = InstrumentLookup.BuildIndex(instrumentsRoot);
         var idFilter = InstrumentLookup.ParseIds(instrumentIds);
+        var attrFilter = InstrumentLookup.FilterIdsByAttributes(instrumentsRoot, marketId, countryId, sectorId, branchId);
 
         var entries = new List<(int InsId, double? Numeric, string? StringValue)>();
         foreach (var node in rawValues.OfType<JsonObject>())
@@ -224,6 +305,8 @@ public static class MarketDataTools
             if (node["i"] is not JsonValue idValue || !idValue.TryGetValue(out int insId))
                 continue;
             if (idFilter is not null && !idFilter.Contains(insId))
+                continue;
+            if (attrFilter is not null && !attrFilter.Contains(insId))
                 continue;
 
             double? numeric = node["n"] is JsonValue nv && nv.TryGetValue(out double d) ? d : null;

@@ -59,7 +59,7 @@ jobs:
             | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for Linux (x64) — no separate runtime installation needed. Requires your own Börsdata account with API access."
             | .compatibility.platforms = ["linux"]
             | .server.entry_point = "server/app/BorsdataMcp"
-            | .server.mcp_config.command = "server/app/BorsdataMcp"
+            | .server.mcp_config.command = "${__dirname}/server/app/BorsdataMcp"
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
@@ -75,7 +75,7 @@ jobs:
             | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for Windows (x64) — no separate runtime installation needed. Requires your own Börsdata account with API access."
             | .compatibility.platforms = ["win32"]
             | .server.entry_point = "server/app/BorsdataMcp.exe"
-            | .server.mcp_config.command = "server/app/BorsdataMcp.exe"
+            | .server.mcp_config.command = "${__dirname}/server/app/BorsdataMcp.exe"
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
@@ -129,7 +129,7 @@ jobs:
             | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for macOS (Intel + Apple Silicon) — no separate runtime installation needed. Requires your own Börsdata account with API access."
             | .compatibility.platforms = ["darwin"]
             | .server.entry_point = "server/app/BorsdataMcp"
-            | .server.mcp_config.command = "server/app/BorsdataMcp"
+            | .server.mcp_config.command = "${__dirname}/server/app/BorsdataMcp"
             | del(.server.mcp_config.args)
           ' mcpb/manifest.json > "$RUNNER_TEMP/manifest.darwin.json"
           mv "$RUNNER_TEMP/manifest.darwin.json" mcpb/manifest.json
@@ -185,7 +185,7 @@ jobs:
             | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for Linux (x64) — no separate runtime installation needed. Requires your own Börsdata account with API access."
             | .compatibility.platforms = ["linux"]
             | .server.entry_point = "server/app/BorsdataMcp"
-            | .server.mcp_config.command = "server/app/BorsdataMcp"
+            | .server.mcp_config.command = "${__dirname}/server/app/BorsdataMcp"
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
@@ -201,7 +201,7 @@ jobs:
             | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for Windows (x64) — no separate runtime installation needed. Requires your own Börsdata account with API access."
             | .compatibility.platforms = ["win32"]
             | .server.entry_point = "server/app/BorsdataMcp.exe"
-            | .server.mcp_config.command = "server/app/BorsdataMcp.exe"
+            | .server.mcp_config.command = "${__dirname}/server/app/BorsdataMcp.exe"
             | del(.server.mcp_config.args)
           ' "$RUNNER_TEMP/manifest.base.json" > mcpb/manifest.json
           dotnet publish src/BorsdataMcp/BorsdataMcp.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o mcpb/server/app
@@ -253,7 +253,7 @@ jobs:
             | .description = "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled, self-contained .NET app for macOS (Intel + Apple Silicon) — no separate runtime installation needed. Requires your own Börsdata account with API access."
             | .compatibility.platforms = ["darwin"]
             | .server.entry_point = "server/app/BorsdataMcp"
-            | .server.mcp_config.command = "server/app/BorsdataMcp"
+            | .server.mcp_config.command = "${__dirname}/server/app/BorsdataMcp"
             | del(.server.mcp_config.args)
           ' mcpb/manifest.json > "$RUNNER_TEMP/manifest.darwin.json"
           mv "$RUNNER_TEMP/manifest.darwin.json" mcpb/manifest.json
