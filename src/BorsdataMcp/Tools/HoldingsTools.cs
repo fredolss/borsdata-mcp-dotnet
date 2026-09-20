@@ -16,13 +16,13 @@ public static class HoldingsTools
         "simple buy/sell scheme, so use 'direction' (based on the sign of the shares field) instead " +
         "to distinguish acquisitions from disposals. Returns one entry per instrument: " +
         "{ insId, totalMatched, returned, transactions }. Also works transparently for a global " +
-        "(non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with " +
+        "(non-Nordic, Pro+) instrument's insId — discover one via list_instruments with " +
         "includeGlobal:true — but Börsdata does not track insider disclosures for most global " +
         "instruments, so a global insId typically returns an empty result (HTTP 200, not an error) " +
         "rather than failing.")]
     public static async Task<string> GetInsiderHoldings(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds, from ListInstruments.")] string instrumentIds,
+        [Description("Comma-separated instrument insIds, from list_instruments.")] string instrumentIds,
         [Description("Only include transactions on or after this date, 'yyyy-MM-dd'. Optional.")]
         string? fromDate = null,
         [Description("Only include transactions on or before this date, 'yyyy-MM-dd'. Optional.")]
@@ -46,13 +46,13 @@ public static class HoldingsTools
         "no server-side date filtering or limiting — results here are sorted most-recent-first and " +
         "filtered/capped client-side. Returns one entry per instrument: " +
         "{ insId, totalMatched, returned, buybacks }. Also works transparently for a global " +
-        "(non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with " +
+        "(non-Nordic, Pro+) instrument's insId — discover one via list_instruments with " +
         "includeGlobal:true — but Börsdata does not track buyback disclosures for most global " +
         "instruments, so a global insId typically returns an empty result (HTTP 200, not an error) " +
         "rather than failing.")]
     public static async Task<string> GetBuybackHoldings(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds, from ListInstruments.")] string instrumentIds,
+        [Description("Comma-separated instrument insIds, from list_instruments.")] string instrumentIds,
         [Description("Only include buybacks on or after this date, 'yyyy-MM-dd'. Optional.")]
         string? fromDate = null,
         [Description("Only include buybacks on or before this date, 'yyyy-MM-dd'. Optional.")]
@@ -75,7 +75,7 @@ public static class HoldingsTools
         "instruments only — Börsdata has no global counterpart for this endpoint.")]
     public static async Task<string> GetShortHoldings(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings resolved via ListInstruments. Optional — omit to screen all instruments.")]
+        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings resolved via list_instruments. Optional — omit to screen all instruments.")]
         string? instrumentIds = null,
         [Description("Only include instruments whose shorting percent (absolute value) is at least this. Optional.")]
         double? minShortingPercent = null,

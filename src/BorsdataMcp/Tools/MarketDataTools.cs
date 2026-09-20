@@ -13,10 +13,10 @@ public static class MarketDataTools
         "window in YEARS (1-20, per Börsdata's own limit for this endpoint), not a count of " +
         "days/entries — pass from/to instead for an exact date range or a small recent window " +
         "(e.g. the last 30 days). Also works transparently for a global (non-Nordic, Pro+) " +
-        "instrument's insId — discover one via ListInstruments with includeGlobal:true.")]
+        "instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetStockPrices(
         BorsdataApiClient client,
-        [Description("The instrument's insId, from ListInstruments.")] int instrumentId,
+        [Description("The instrument's insId, from list_instruments.")] int instrumentId,
         [Description("Start date, 'yyyy-MM-dd'. Optional.")] string? from = null,
         [Description("End date, 'yyyy-MM-dd'. Optional.")] string? to = null,
         [Description("Lookback window in years (1-20), applied server-side by Börsdata. Only has an effect when from is omitted — has no effect on top of an explicit from/to range. Optional; omitting it defaults to 10 years.")]
@@ -32,15 +32,15 @@ public static class MarketDataTools
     [McpServerTool, Description(
         "Gets the latest daily stock price (open, high, low, close, volume) for every instrument on " +
         "Börsdata in one call — Börsdata returns ~1,700 entries unfiltered, so prefer instrumentIds " +
-        "(e.g. your holdings from ListInstruments) and/or maxCount to keep the response small. Each " +
+        "(e.g. your holdings from list_instruments) and/or maxCount to keep the response small. Each " +
         "result is enriched with ticker/name. Returns { totalMatched, returned, values }.")]
     public static async Task<string> GetLatestStockPrices(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings from ListInstruments. Optional — omit to get every instrument.")]
+        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings from list_instruments. Optional — omit to get every instrument.")]
         string? instrumentIds = null,
         [Description("Query Börsdata's global (non-Nordic, Pro+) instrument universe instead of " +
             "the default Nordic one. Switches the data source rather than merging it — unlike " +
-            "ListInstruments' includeGlobal, since this endpoint isn't cached and merging by " +
+            "list_instruments' includeGlobal, since this endpoint isn't cached and merging by " +
             "default would double live API traffic and payload size on every call. Default false.")]
         bool global = false,
         [Description("Maximum number of results to return. Omit to return all matches.")]
@@ -58,7 +58,7 @@ public static class MarketDataTools
 
     [McpServerTool, Description(
         "Gets each instrument's stock price (open, high, low, close, volume) on a specific " +
-        "historical date — the same data as GetLatestStockPrices but for a date you choose instead " +
+        "historical date — the same data as get_latest_stock_prices but for a date you choose instead " +
         "of the most recent trading day. A weekend/holiday date returns no results rather than an " +
         "error. Börsdata returns ~1,700 entries unfiltered, so prefer instrumentIds and/or maxCount " +
         "to keep the response small. Each result is enriched with ticker/name. Returns " +
@@ -66,11 +66,11 @@ public static class MarketDataTools
     public static async Task<string> GetStockPricesByDate(
         BorsdataApiClient client,
         [Description("The date to get prices for, 'yyyy-MM-dd'.")] string date,
-        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings from ListInstruments. Optional — omit to get every instrument.")]
+        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings from list_instruments. Optional — omit to get every instrument.")]
         string? instrumentIds = null,
         [Description("Query Börsdata's global (non-Nordic, Pro+) instrument universe instead of " +
             "the default Nordic one. Switches the data source rather than merging it — unlike " +
-            "ListInstruments' includeGlobal, since this endpoint isn't cached and merging by " +
+            "list_instruments' includeGlobal, since this endpoint isn't cached and merging by " +
             "default would double live API traffic and payload size on every call. Default false.")]
         bool global = false,
         [Description("Maximum number of results to return. Omit to return all matches.")]
@@ -123,40 +123,40 @@ public static class MarketDataTools
         };
     }
 
-    [McpServerTool, Description("Gets a calculated KPI value (e.g. P/E, revenue growth) for one instrument. kpiId/calcGroup/calc identify the specific metric per the Börsdata KPI reference (https://borsdata.se/en/insights/api). For every KPI at once for this instrument, use GetKpiSummary instead. For shorting/short-interest data specifically, use GetShortHoldings instead — it doesn't require guessing a kpiId/calcGroup/calc combination. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with includeGlobal:true.")]
+    [McpServerTool, Description("Gets a calculated KPI value (e.g. P/E, revenue growth) for one instrument. kpiId/calcGroup/calc identify the specific metric per the Börsdata KPI reference (https://borsdata.se/en/insights/api). For every KPI at once for this instrument, use get_kpi_summary instead. For shorting/short-interest data specifically, use get_short_holdings instead — it doesn't require guessing a kpiId/calcGroup/calc combination. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetKpiScreener(
         BorsdataApiClient client,
-        [Description("The instrument's insId, from ListInstruments.")] int instrumentId,
+        [Description("The instrument's insId, from list_instruments.")] int instrumentId,
         [Description("The Börsdata KPI id.")] int kpiId,
         [Description("The calculation group, e.g. 'last', 'quarter', 'year'.")] string calcGroup,
         [Description("The calculation, e.g. 'latest', 'cagr5y', 'mean'.")] string calc,
         CancellationToken cancellationToken) =>
         (await client.GetKpiScreenerAsync(instrumentId, kpiId, calcGroup, calc, cancellationToken))?.ToJsonString() ?? "{}";
 
-    [McpServerTool, Description("Gets historical values for a KPI (e.g. P/E) over time for one instrument — how the metric has trended across periods, unlike GetKpiScreener which returns a single current value. kpiId identifies the metric (see ListKpiMetadata); reportType/priceType follow the Börsdata KPI reference (https://borsdata.se/en/insights/api) and not every combination is valid for every KPI (an invalid one returns an HTTP 400 from Börsdata). Omit maxCount for the API's default window. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with includeGlobal:true.")]
+    [McpServerTool, Description("Gets historical values for a KPI (e.g. P/E) over time for one instrument — how the metric has trended across periods, unlike get_kpi_screener which returns a single current value. kpiId identifies the metric (see list_kpi_metadata); reportType/priceType follow the Börsdata KPI reference (https://borsdata.se/en/insights/api) and not every combination is valid for every KPI (an invalid one returns an HTTP 400 from Börsdata). Omit maxCount for the API's default window. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetKpiHistory(
         BorsdataApiClient client,
-        [Description("The instrument's insId, from ListInstruments.")] int instrumentId,
-        [Description("The Börsdata KPI id, from ListKpiMetadata (e.g. 2 for P/E).")] int kpiId,
+        [Description("The instrument's insId, from list_instruments.")] int instrumentId,
+        [Description("The Börsdata KPI id, from list_kpi_metadata (e.g. 2 for P/E).")] int kpiId,
         [Description("The report period, e.g. 'year' or 'r12'.")] string reportType,
         [Description("The price/value basis, e.g. 'mean', 'high', 'low', 'latest'.")] string priceType,
         [Description("Maximum number of most recent periods to return. Optional.")] int? maxCount = null,
         CancellationToken cancellationToken = default) =>
         (await client.GetKpiHistoryAsync(instrumentId, kpiId, reportType, priceType, maxCount, cancellationToken))?.ToJsonString() ?? "{}";
 
-    [McpServerTool, Description("Gets every KPI Börsdata tracks (P/E, revenue growth, margins, etc.) for one instrument across multiple periods in one call — unlike GetKpiScreener, which returns a single value for one specific KPI. Each entry is keyed by KpiId (see ListKpiMetadata to resolve names); omit maxCount for the API's default number of periods per KPI. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with includeGlobal:true.")]
+    [McpServerTool, Description("Gets every KPI Börsdata tracks (P/E, revenue growth, margins, etc.) for one instrument across multiple periods in one call — unlike get_kpi_screener, which returns a single value for one specific KPI. Each entry is keyed by KpiId (see list_kpi_metadata to resolve names); omit maxCount for the API's default number of periods per KPI. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetKpiSummary(
         BorsdataApiClient client,
-        [Description("The instrument's insId, from ListInstruments.")] int instrumentId,
+        [Description("The instrument's insId, from list_instruments.")] int instrumentId,
         [Description("Report period: 'year', 'quarter', or 'r12'.")] string reportType,
         [Description("Maximum number of most recent periods to return per KPI. Optional.")] int? maxCount = null,
         CancellationToken cancellationToken = default) =>
         (await client.GetKpiSummaryAsync(instrumentId, reportType, maxCount, cancellationToken))?.ToJsonString() ?? "{}";
 
-    [McpServerTool, Description("Gets financial reports (income statement, balance sheet, cash flow) for one instrument. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with includeGlobal:true.")]
+    [McpServerTool, Description("Gets financial reports (income statement, balance sheet, cash flow) for one instrument. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetReports(
         BorsdataApiClient client,
-        [Description("The instrument's insId, from ListInstruments.")] int instrumentId,
+        [Description("The instrument's insId, from list_instruments.")] int instrumentId,
         [Description("Report period: 'year', 'quarter', or 'r12'.")] string reportType,
         CancellationToken cancellationToken) =>
         (await client.GetReportsAsync(instrumentId, reportType, cancellationToken))?.ToJsonString() ?? "{}";
@@ -166,17 +166,24 @@ public static class MarketDataTools
         "KPI screener across the whole market. Useful for screening (e.g. \"which companies have " +
         "P/E under 15\") or for checking one KPI across a specific set of holdings. kpiId/calcGroup/" +
         "calc identify the metric per the Börsdata KPI reference (https://borsdata.se/en/insights/api). " +
-        "Without instrumentIds or value bounds this covers roughly 14,000 instruments — prefer " +
-        "instrumentIds and/or minValue/maxValue/maxCount to keep the response small. Each result " +
-        "includes ticker/name alongside insId so a second lookup isn't needed. For shorting/" +
-        "short-interest data specifically, use GetShortHoldings instead — it doesn't require " +
-        "guessing a kpiId/calcGroup/calc combination.")]
+        "This endpoint has no server-side market/sector/country filter — if the request is scoped to " +
+        "a specific market/sector/country/branch (e.g. \"Swedish large cap\"), first call list_instruments " +
+        "with that filter (e.g. marketId) to resolve the matching insIds, then pass them as " +
+        "instrumentIds here; without that, this screens Börsdata's *entire* universe and the result " +
+        "will include instruments outside the requested scope. Without instrumentIds or value bounds " +
+        "this covers roughly 14,000 instruments — prefer instrumentIds and/or minValue/maxValue/" +
+        "maxCount to keep the response small. Each result includes ticker/name alongside insId so a " +
+        "second lookup isn't needed. For shorting/short-interest data specifically, use " +
+        "get_short_holdings instead — it doesn't require guessing a kpiId/calcGroup/calc combination.")]
     public static async Task<string> GetKpiListScreener(
         BorsdataApiClient client,
         [Description("The Börsdata KPI id, e.g. 2 for P/E.")] int kpiId,
         [Description("The calculation group, e.g. 'last', 'quarter', 'year', '1year', '3year'.")] string calcGroup,
         [Description("The calculation, e.g. 'latest', 'mean', 'high', 'low'.")] string calc,
-        [Description("Comma-separated instrument insIds to restrict results to, e.g. your holdings resolved via ListInstruments. Optional — omit to screen all instruments.")]
+        [Description("Comma-separated instrument insIds to restrict results to — e.g. a set of holdings, or " +
+            "the insIds from a list_instruments call filtered by marketId/countryId/sectorId/branchId when " +
+            "the request is scoped to a specific market/sector/country (pass those ids here, don't skip " +
+            "this step). Optional — omit only to intentionally screen every instrument.")]
         string? instrumentIds = null,
         [Description("Only include instruments whose value is greater than or equal to this. Optional.")]
         double? minValue = null,
@@ -186,7 +193,7 @@ public static class MarketDataTools
         bool sortDescending = false,
         [Description("Query Börsdata's global (non-Nordic, Pro+) instrument universe instead of " +
             "the default Nordic one. Switches the data source rather than merging it — unlike " +
-            "ListInstruments' includeGlobal, since this endpoint isn't cached and merging by " +
+            "list_instruments' includeGlobal, since this endpoint isn't cached and merging by " +
             "default would double live API traffic and payload size on every call. Default false.")]
         bool global = false,
         [Description("Maximum number of results to return. Omit to return all matches.")]

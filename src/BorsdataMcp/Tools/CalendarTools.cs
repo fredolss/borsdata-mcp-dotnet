@@ -12,11 +12,11 @@ public static class CalendarTools
         "full history of past and already-scheduled future dates in one list, so pass fromDate " +
         "(e.g. today) to see only upcoming reports rather than the whole history. Returns one entry " +
         "per instrument: { insId, totalMatched, returned, reports }. Also works transparently for a " +
-        "global (non-Nordic, Pro+) instrument's insId — discover one via ListInstruments with " +
+        "global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with " +
         "includeGlobal:true.")]
     public static async Task<string> GetReportCalendar(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds, from ListInstruments.")] string instrumentIds,
+        [Description("Comma-separated instrument insIds, from list_instruments.")] string instrumentIds,
         [Description("Only include reports on or after this date, 'yyyy-MM-dd'. Optional — omit for full history.")]
         string? fromDate = null,
         [Description("Only include reports on or before this date, 'yyyy-MM-dd'. Optional.")]
@@ -35,10 +35,10 @@ public static class CalendarTools
         "so pass fromDate (e.g. today) to see only upcoming ones rather than the whole history. " +
         "Returns one entry per instrument: { insId, totalMatched, returned, dividends }. Also works " +
         "transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via " +
-        "ListInstruments with includeGlobal:true.")]
+        "list_instruments with includeGlobal:true.")]
     public static async Task<string> GetDividendCalendar(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds, from ListInstruments.")] string instrumentIds,
+        [Description("Comma-separated instrument insIds, from list_instruments.")] string instrumentIds,
         [Description("Only include dividends with an ex-date on or after this date, 'yyyy-MM-dd'. Optional — omit for full history.")]
         string? fromDate = null,
         [Description("Only include dividends with an ex-date on or before this date, 'yyyy-MM-dd'. Optional.")]
