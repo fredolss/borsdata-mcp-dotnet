@@ -89,7 +89,9 @@ public class InstrumentScreeningServiceTests
         ScreeningOptions? screeningOptions = null)
     {
         stub = new ScreeningStubHandler();
-        timeProvider = new MutableTimeProvider(new DateTimeOffset(2026, 9, 21, 12, 0, 0, TimeSpan.Zero));
+        // Deliberately far from the real system clock: cache lifetime must follow this injected
+        // clock semantically without passing its absolute timestamps to IMemoryCache.
+        timeProvider = new MutableTimeProvider(new DateTimeOffset(2000, 1, 1, 12, 0, 0, TimeSpan.Zero));
         var sharedCache = cache ?? new MemoryCache(new MemoryCacheOptions());
         var httpClient = new HttpClient(stub) { BaseAddress = new Uri("https://apiservice.borsdata.se/v1/") };
         var client = new BorsdataApiClient(httpClient, sharedCache);

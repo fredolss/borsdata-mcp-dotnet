@@ -167,7 +167,7 @@ public sealed class InstrumentScreeningService(
             now,
             expiresAt,
             pageSize);
-        cache.Set(SnapshotKey(snapshot.ScreeningId), snapshot, expiresAt);
+        SetCacheEntry(SnapshotKey(snapshot.ScreeningId), snapshot, expiresAt);
 
         return RenderPage(snapshot, 0);
     }
@@ -199,7 +199,7 @@ public sealed class InstrumentScreeningService(
         if (nextOffset < snapshot.TotalMatched)
         {
             nextCursor = CreateToken();
-            cache.Set(
+            SetCacheEntry(
                 CursorKey(nextCursor),
                 new CursorEntry(snapshot.ScreeningId, nextOffset, snapshot.ExpiresAt),
                 snapshot.ExpiresAt);
@@ -361,6 +361,22 @@ public sealed class InstrumentScreeningService(
 
     private static string SnapshotKey(string screeningId) => SnapshotKeyPrefix + screeningId;
     private static string CursorKey(string cursor) => CursorKeyPrefix + cursor;
+
+    private void SetCacheEntry<T>(string key, T value, DateTimeOffset expiresAt) where T : notnull
+    {
+        // IMemoryCache evaluates absolute DateTimeOffset expirations with its own system clock.
+        // Store the remaining lifetime instead so tests and hosts with an injected TimeProvider
+        // cannot accidentally create entries that the cache considers already expired. The
+        // embedded ExpiresAt checks above remain authoritative and prevent cursor extension.
+        var remainingLifetime = expiresAt - timeProvider.GetUtcNow();
+        if (remainingLifetime <= TimeSpan.Zero)
+            return;
+
+        cache.Set(key, value, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = remainingLifetime
+        });
+    }
 
     private static string CreateToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
