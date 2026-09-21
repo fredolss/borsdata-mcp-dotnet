@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Data/kpi-screener-options.json" />
   </ItemGroup>
 
 </Project>

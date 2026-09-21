@@ -25,7 +25,8 @@ public sealed class InstrumentScreeningService(
     BorsdataApiClient client,
     IMemoryCache cache,
     IOptions<ScreeningOptions> options,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    KpiScreenerCatalog kpiCatalog)
 {
     private const string SnapshotKeyPrefix = "screening:snapshot:";
     private const string CursorKeyPrefix = "screening:cursor:";
@@ -58,7 +59,12 @@ public sealed class InstrumentScreeningService(
         ValidateIds(request.BranchIds, "branchIds");
 
         foreach (var filter in filters)
+        {
             ValidateFilter(filter);
+            if (!kpiCatalog.Contains(filter.KpiId, filter.CalcGroup, filter.Calc))
+                throw InvalidRequest(kpiCatalog.DescribeInvalidCombination(
+                    filter.KpiId, filter.CalcGroup, filter.Calc));
+        }
 
         var uniqueKeys = filters
             .Select(ToKey)

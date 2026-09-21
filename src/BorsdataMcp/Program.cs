@@ -14,6 +14,7 @@ builder.Services.Configure<ScreeningOptions>(builder.Configuration.GetSection("S
 
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<KpiScreenerCatalog>();
 builder.Services.AddTransient<InstrumentScreeningService>();
 
 builder.Services.AddTransient<AuthKeyHandler>();

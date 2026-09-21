@@ -38,7 +38,7 @@ public class InstrumentScreeningServiceTests
             requestUris.Add(request.RequestUri!);
             var path = request.RequestUri!.AbsolutePath;
 
-            if (path.Contains("/kpis/999/"))
+            if (path.Contains("/kpis/2/15year/high"))
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
                 {
@@ -97,7 +97,8 @@ public class InstrumentScreeningServiceTests
             client,
             sharedCache,
             Options.Create(screeningOptions ?? new ScreeningOptions()),
-            timeProvider);
+            timeProvider,
+            new KpiScreenerCatalog());
     }
 
     private static KpiFilterInput Filter(
@@ -259,11 +260,27 @@ public class InstrumentScreeningServiceTests
         var service = CreateService(out _, out _);
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.ScreenAsync(new InstrumentScreeningRequest(KpiFilters: [Filter(999)])));
+            service.ScreenAsync(new InstrumentScreeningRequest(
+                KpiFilters: [Filter(2, calcGroup: "15year", calc: "high")])));
 
         Assert.StartsWith("KPI_FETCH_FAILED:", error.Message);
-        Assert.Contains("999/last/latest", error.Message);
+        Assert.Contains("2/15year/high", error.Message);
         Assert.Contains("Invalid KPI combination", error.Message);
+    }
+
+    [Fact]
+    public async Task Screen_InvalidCatalogCombinationIsRejectedBeforeAnyApiCall()
+    {
+        var service = CreateService(out var stub, out _);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.ScreenAsync(new InstrumentScreeningRequest(
+                KpiFilters: [Filter(97, calcGroup: "year", calc: "cagr5y")])));
+
+        Assert.StartsWith("INVALID_REQUEST:", error.Message);
+        Assert.Contains("Invalid KPI combination 97/year/cagr5y", error.Message);
+        Assert.Contains("list_kpi_screener_options", error.Message);
+        Assert.Equal(0, stub.CallCount);
     }
 
     [Theory]
@@ -377,7 +394,8 @@ public class InstrumentScreeningServiceTests
         var client = new BorsdataApiClient(
             new HttpClient(handler) { BaseAddress = new Uri("https://apiservice.borsdata.se/v1/") }, cache);
         var service = new InstrumentScreeningService(
-            client, cache, Options.Create(new ScreeningOptions()), TimeProvider.System);
+            client, cache, Options.Create(new ScreeningOptions()), TimeProvider.System,
+            new KpiScreenerCatalog());
 
         var result = JsonNode.Parse(await service.ScreenAsync(new InstrumentScreeningRequest(
             KpiFilters: [Filter()], PageSize: 200)))!;

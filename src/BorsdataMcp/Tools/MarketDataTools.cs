@@ -123,16 +123,14 @@ public static class MarketDataTools
         };
     }
 
-    [McpServerTool, Description("Gets a calculated KPI value (e.g. P/E, revenue growth) for one instrument. kpiId/calcGroup/calc identify the specific metric per the Börsdata KPI reference (https://borsdata.se/en/insights/api), and not every calcGroup/calc combination is valid for every kpiId — an invalid one returns an HTTP 400 from Börsdata (the error message now includes Börsdata's own explanation). If unsure, calcGroup 'last' with calc 'latest' is confirmed to work for most KPIs; 'year'/'latest' does NOT work for kpiId 2 (P/E), for example. For every KPI at once for this instrument, use get_kpi_summary instead. For shorting/short-interest data specifically, use get_short_holdings instead — it doesn't require guessing a kpiId/calcGroup/calc combination. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
+    [McpServerTool, Description("Gets a calculated KPI value (e.g. P/E, revenue growth) for one instrument. kpiId/calcGroup/calc must be an exact combination from list_kpi_screener_options; call that local lookup tool first when unsure and never guess. For every KPI at once for this instrument, use get_kpi_summary instead. For shorting/short-interest data specifically, use get_short_holdings instead. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetKpiScreener(
         BorsdataApiClient client,
         [Description("The instrument's insId, from list_instruments.")] int instrumentId,
         [Description("The Börsdata KPI id.")] int kpiId,
-        [Description("The calculation group. 'last' is confirmed to work broadly; 'year'/'quarter'/'1year'/'3year' " +
-            "are valid for some KPIs but not others (Börsdata returns HTTP 400 for an invalid combination) — if " +
-            "unsure, try 'last' first.")]
+        [Description("The exact calculation group from list_kpi_screener_options.")]
         string calcGroup,
-        [Description("The calculation, e.g. 'latest', 'cagr5y', 'mean'.")] string calc,
+        [Description("The exact calculation from list_kpi_screener_options, e.g. 'latest', 'cagr', or 'mean'.")] string calc,
         CancellationToken cancellationToken) =>
         (await client.GetKpiScreenerAsync(instrumentId, kpiId, calcGroup, calc, cancellationToken))?.ToJsonString() ?? "{}";
 
@@ -242,8 +240,8 @@ public static class MarketDataTools
         "actually built for scoping to specific ids. For Börsdata's global (non-Nordic, Pro+) " +
         "instrument universe, use get_global_kpi_list_screener instead — a separate tool mirroring " +
         "Börsdata's own separate endpoint for that, not a parameter on this one. kpiId/calcGroup/" +
-        "calc identify the metric per the Börsdata KPI reference " +
-        "(https://borsdata.se/en/insights/api). Each result includes ticker/name alongside insId. " +
+        "calc must be an exact combination from list_kpi_screener_options. Each result includes " +
+        "ticker/name alongside insId. " +
         "This raw tool is intended for complete data retrieval, export, or custom processing. For " +
         "finding instruments that satisfy one or more KPI conditions, prefer screen_instruments. " +
         "For shorting/short-interest data specifically, use get_short_holdings instead — it doesn't " +
@@ -251,11 +249,9 @@ public static class MarketDataTools
     public static async Task<string> GetKpiListScreener(
         BorsdataApiClient client,
         [Description("The Börsdata KPI id, e.g. 2 for P/E.")] int kpiId,
-        [Description("The calculation group. 'last' is confirmed to work broadly; 'year'/'quarter'/'1year'/" +
-            "'3year' are valid for some KPIs but not others (Börsdata returns HTTP 400 for an invalid " +
-            "combination, e.g. 'year' does NOT work for kpiId 2/P/E) — if unsure, try 'last' first.")]
+        [Description("The exact calculation group from list_kpi_screener_options.")]
         string calcGroup,
-        [Description("The calculation, e.g. 'latest', 'mean', 'high', 'low'.")] string calc,
+        [Description("The exact calculation from list_kpi_screener_options, e.g. 'latest', 'cagr', 'mean', 'high', or 'low'.")] string calc,
         CancellationToken cancellationToken = default)
     {
         var values = await client.GetKpiListScreenerAsync(kpiId, calcGroup, calc, cancellationToken);
@@ -274,11 +270,9 @@ public static class MarketDataTools
     public static async Task<string> GetGlobalKpiListScreener(
         BorsdataApiClient client,
         [Description("The Börsdata KPI id, e.g. 2 for P/E.")] int kpiId,
-        [Description("The calculation group. 'last' is confirmed to work broadly; 'year'/'quarter'/'1year'/" +
-            "'3year' are valid for some KPIs but not others (Börsdata returns HTTP 400 for an invalid " +
-            "combination) — if unsure, try 'last' first.")]
+        [Description("The exact calculation group from list_kpi_screener_options.")]
         string calcGroup,
-        [Description("The calculation, e.g. 'latest', 'mean', 'high', 'low'.")] string calc,
+        [Description("The exact calculation from list_kpi_screener_options, e.g. 'latest', 'cagr', 'mean', 'high', or 'low'.")] string calc,
         CancellationToken cancellationToken = default)
     {
         var values = await client.GetGlobalKpiListScreenerAsync(kpiId, calcGroup, calc, cancellationToken);

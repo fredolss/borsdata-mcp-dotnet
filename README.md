@@ -37,6 +37,7 @@ Once connected, you can ask your AI assistant things like this in swedish:
 | `list_sectors` | Lists all sectors known to Börsdata | — |
 | `list_countries` | Lists all countries known to Börsdata | — |
 | `list_kpi_metadata` | Lists all KPIs known to Börsdata (kpiId, Swedish/English name, format, whether the value is a string) — use to find the `kpiId` for `screen_instruments`/`get_kpi_screener`/`get_kpi_history`/`get_kpi_list_screener` | — |
+| `list_kpi_screener_options` | Searches a bundled copy of Börsdata's official KPI Screener List for exact, valid `kpiId`/`calcGroup`/`calc` combinations. Makes no Börsdata API request. Use this before the screener tools whenever the combination is unknown; do not guess. | `kpiId`, `query`, `maxCount` (at least `kpiId` or `query` is required) |
 | `get_stock_splits` | Stock splits and reverse splits across all instruments (small, ~44 entries live) — split date, ratio, type. Each result is enriched with `ticker`/`name` | — |
 | `list_report_metadata` | Lists metadata for every field returned by `get_reports`/`get_kpi_summary` (property name, Swedish/English display name, format) — use to look up what a report field means | — |
 | `list_translation_metadata` | Lists Börsdata's translation table (`translationKey` plus Swedish/English name) used for coded labels across the API, e.g. sector/branch names | — |
@@ -49,7 +50,7 @@ Once connected, you can ask your AI assistant things like this in swedish:
 | `get_kpi_history` | How a KPI (e.g. P/E) has trended over time for one instrument, unlike `get_kpi_screener`'s single current value | `instrumentId`, `kpiId`, `reportType`, `priceType` (required); `maxCount` (optional — not every reportType/priceType combination is valid for every KPI) |
 | `get_kpi_summary` | Every KPI Börsdata tracks for one instrument across multiple periods in one call — unlike `get_kpi_screener`'s single value for one specific KPI. Each entry is keyed by `KpiId` (see `list_kpi_metadata` to resolve names) | `instrumentId`, `reportType` (`year`/`quarter`/`r12`) (required); `maxCount` (optional, caps periods per KPI) |
 | `get_reports` | Financial reports (income statement, balance sheet, cash flow) for one instrument | `instrumentId`, `reportType` (`year`/`quarter`/`r12`) (all required) |
-| `screen_instruments` | Recommended for finding Nordic or global instruments that satisfy one or more financial KPI conditions. Fetches complete KPI lists internally, combines filters with AND logic, and returns a cursor-paginated result snapshot. Call again with only `cursor` when `nextCursor` is returned. | First call: `kpiFilters` (required); `global`, `countryIds`, `marketIds`, `sectorIds`, `branchIds`, `sortBy`, `pageSize` (optional). Later pages: `cursor` only. |
+| `screen_instruments` | Recommended for finding Nordic or global instruments that satisfy one or more financial KPI conditions. Validates every KPI combination against the bundled official catalog, fetches complete KPI lists internally, combines filters with AND logic, and returns a cursor-paginated result snapshot. Call again with only `cursor` when `nextCursor` is returned. | First call: `kpiFilters` (required); `global`, `countryIds`, `marketIds`, `sectorIds`, `branchIds`, `sortBy`, `pageSize` (optional). Later pages: `cursor` only. |
 | `get_kpi_list_screener` | A calculated KPI value (e.g. P/E) for every Nordic instrument on Börsdata in one call — a raw, complete mirror of Börsdata's bulk endpoint for export or custom processing, with no sort, filter, or count control (~14,000 entries). Prefer `screen_instruments` for KPI-condition screening. Each result is enriched with `ticker`/`name`. Returns `{ kpiId, calcGroup, calc, values }` | `kpiId`, `calcGroup`, `calc` (all required) |
 | `get_global_kpi_list_screener` | The raw, complete global counterpart to `get_kpi_list_screener`, mirroring Börsdata's separate global endpoint with no result cap. Prefer `screen_instruments` for KPI-condition screening. Returns `{ kpiId, calcGroup, calc, values }` | `kpiId`, `calcGroup`, `calc` (all required) |
 | `get_kpi_history_array` | Historical values for a KPI (e.g. P/E) over time for a *list* of instruments in one call — the bulk version of `get_kpi_history`, and a direct mirror of Börsdata's own "Kpi History" array endpoint. Unlike `get_kpi_list_screener`, this one filters server-side by `instrumentIds`. Returns one entry per instrument under `kpisList` (or an `error` field per instrument if unresolved) | `kpiId`, `reportType`, `priceType`, `instrumentIds` (comma-separated, all required); `maxCount` (optional — caps periods per instrument) |
@@ -64,6 +65,15 @@ Once connected, you can ask your AI assistant things like this in swedish:
 
 `instrumentId` is the `insId` returned by `list_instruments`, and is used
 by every other tool that operates on a specific instrument.
+
+The screener option catalog lives in `src/BorsdataMcp/Data/kpi-screener-options.json` and is
+embedded in the application at build time. To refresh it, download Börsdata's
+[`Kpi-Screener-List.md`](https://github.com/Borsdata-Sweden/API/wiki/Kpi-Screener-List) and run:
+
+```bash
+python3 scripts/generate-kpi-screener-catalog.py Kpi-Screener-List.md \
+  src/BorsdataMcp/Data/kpi-screener-options.json --retrieved YYYY-MM-DD
+```
 
 ## Requirements
 
