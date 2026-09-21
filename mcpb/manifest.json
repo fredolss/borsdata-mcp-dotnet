@@ -3,7 +3,7 @@
   "name": "borsdata-mcp-dotnet",
   "display_name": "Borsdata",
   "version": "0.0.0",
-  "description": "Börsdata financial data (instruments, stock prices, KPIs, reports) via a bundled .NET app. Requires your own Börsdata account with API access.",
+  "description": "Börsdata financial data and multi-KPI instrument screening via a bundled .NET app. Requires your own Börsdata account with API access.",
   "long_description": "Bundles a framework-dependent dotnet publish of the borsdata-mcp-dotnet server directly in this .mcpb. Requires the .NET 10 runtime to be installed on this machine (not the SDK). No separate build step for the end user — the app is built into the bundle at packaging time (see .github/workflows/build.yml).\n\nThis extension does not include a Börsdata subscription or API key of its own. You need your own Börsdata account with API access (https://borsdata.se) and must enter your own API key below — the server will not work without one.\n\nDisclaimer: this is an unofficial, community-built project and is not affiliated with, endorsed by, or sponsored by Börsdata AB. \"Börsdata\" is a trademark of Börsdata AB, used here only to describe compatibility with their public API. You are responsible for your own Börsdata subscription, API key, and compliance with Börsdata's own terms of service. This software is provided as-is, without warranty of any kind.",
   "author": {
     "name": "Fredrik Olsson"
@@ -50,8 +50,9 @@
     { "name": "get_reports", "description": "Financial reports (income statement, balance sheet, cash flow) for one instrument." },
     { "name": "get_reports_compound", "description": "All financial report types (year, quarter, r12) for one instrument." },
     { "name": "get_reports_array", "description": "All financial report types for a list of instruments." },
-    { "name": "get_kpi_list_screener", "description": "A calculated KPI value for every Nordic instrument, for market-wide screening." },
-    { "name": "get_global_kpi_list_screener", "description": "Same as get_kpi_list_screener, for Börsdata's global instrument universe." },
+    { "name": "screen_instruments", "description": "Finds Nordic or global instruments matching one or more KPI conditions, with metadata filters, sorting, and cursor-based pagination." },
+    { "name": "get_kpi_list_screener", "description": "Raw, complete calculated KPI values for every Nordic instrument, for export or custom processing." },
+    { "name": "get_global_kpi_list_screener", "description": "Raw, complete calculated KPI values for Börsdata's global instrument universe." },
     { "name": "get_instrument_descriptions", "description": "Company description text for a list of instruments." },
     { "name": "get_report_calendar", "description": "Report release dates for specified instruments." },
     { "name": "get_dividend_calendar", "description": "Dividend ex-dates and amounts for specified instruments." },

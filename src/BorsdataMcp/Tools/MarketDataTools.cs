@@ -244,6 +244,8 @@ public static class MarketDataTools
         "Börsdata's own separate endpoint for that, not a parameter on this one. kpiId/calcGroup/" +
         "calc identify the metric per the Börsdata KPI reference " +
         "(https://borsdata.se/en/insights/api). Each result includes ticker/name alongside insId. " +
+        "This raw tool is intended for complete data retrieval, export, or custom processing. For " +
+        "finding instruments that satisfy one or more KPI conditions, prefer screen_instruments. " +
         "For shorting/short-interest data specifically, use get_short_holdings instead — it doesn't " +
         "require guessing a kpiId/calcGroup/calc combination.")]
     public static async Task<string> GetKpiListScreener(
@@ -267,7 +269,8 @@ public static class MarketDataTools
         "get_kpi_list_screener, mirroring Börsdata's own separate kpislistglobalv1 endpoint (a " +
         "genuinely different endpoint, not a query switch on the Nordic one). Same no-sort/no-cap " +
         "shape as get_kpi_list_screener. Discover a global insId via list_instruments with " +
-        "includeGlobal:true.")]
+        "includeGlobal:true. This raw tool is intended for complete data retrieval, export, or " +
+        "custom processing; prefer screen_instruments for KPI-condition screening.")]
     public static async Task<string> GetGlobalKpiListScreener(
         BorsdataApiClient client,
         [Description("The Börsdata KPI id, e.g. 2 for P/E.")] int kpiId,

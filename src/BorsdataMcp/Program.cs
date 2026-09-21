@@ -10,8 +10,11 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 
 builder.Services.Configure<BorsdataOptions>(builder.Configuration.GetSection("Borsdata"));
+builder.Services.Configure<ScreeningOptions>(builder.Configuration.GetSection("Screening"));
 
 builder.Services.AddMemoryCache();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddTransient<InstrumentScreeningService>();
 
 builder.Services.AddTransient<AuthKeyHandler>();
 // RateLimitState (the rate limiter + daily counter) is the singleton, not RateLimitHandler
