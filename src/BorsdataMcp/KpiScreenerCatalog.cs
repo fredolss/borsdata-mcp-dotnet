@@ -68,15 +68,10 @@ public sealed class KpiScreenerCatalog
             matches = matches.Where(option => option.KpiId == kpiId.Value);
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var (search, aliasKpiId) = CatalogSearch.ApplyKnownAlias(query.Trim());
-            if (aliasKpiId is not null)
-                matches = matches.Where(option => option.KpiId == aliasKpiId.Value);
-            if (search.Length > 0)
-            {
-                matches = matches.Where(option =>
-                    CatalogSearch.MatchesAllTerms(
-                        search, option.KpiName, option.Description, option.CalcGroup, option.Calc));
-            }
+            var search = query.Trim();
+            matches = matches.Where(option =>
+                CatalogSearch.MatchesAllTerms(
+                    search, option.KpiName, option.Description, option.CalcGroup, option.Calc));
         }
 
         var materialized = matches.ToArray();

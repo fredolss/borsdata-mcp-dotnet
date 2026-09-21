@@ -54,16 +54,6 @@ public class KpiScreenerCatalogTests
         Assert.Equal("cagr", option["calc"]!.GetValue<string>());
     }
 
-    [Fact]
-    public void LookupMapsNetIncomeAliasToEarningsKpi()
-    {
-        var result = JsonNode.Parse(new KpiScreenerCatalog().Search(
-            null, "net income 5year cagr", null))!;
-
-        Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
-        Assert.Equal(56, result["options"]![0]!["kpiId"]!.GetValue<int>());
-    }
-
     [Theory]
     [InlineData(null, null, null)]
     [InlineData(0, null, null)]

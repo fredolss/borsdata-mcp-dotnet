@@ -17,7 +17,7 @@ public static class ScreeningTools
         KpiHistoryCatalog catalog,
         [Description("Optional exact KPI id, normally obtained from list_kpi_metadata.")]
         int? kpiId = null,
-        [Description("Optional case-insensitive, word-order-independent search across KPI name, description, reportType, and priceType. Common financial aliases such as 'net income' are supported.")]
+        [Description("Optional case-insensitive, word-order-independent search across KPI name, description, reportType, and priceType.")]
         string? query = null,
         [Description("Maximum combinations to return. Default 100; maximum 200.")]
         int? maxCount = null) =>
@@ -35,7 +35,7 @@ public static class ScreeningTools
         KpiScreenerCatalog catalog,
         [Description("Optional exact KPI id, normally obtained from list_kpi_metadata.")]
         int? kpiId = null,
-        [Description("Optional case-insensitive, word-order-independent search across English KPI name, description, calcGroup, and calc. Common financial aliases such as 'net income' are supported.")]
+        [Description("Optional case-insensitive, word-order-independent search across English KPI name, description, calcGroup, and calc.")]
         string? query = null,
         [Description("Maximum combinations to return. Default 100; maximum 200.")]
         int? maxCount = null) =>

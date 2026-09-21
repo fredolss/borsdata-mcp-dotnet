@@ -39,17 +39,6 @@ public class KpiHistoryCatalogTests
         Assert.Equal(3, result["returned"]!.GetValue<int>());
     }
 
-    [Fact]
-    public void LookupMapsNetIncomeAliasToHistoryKpi()
-    {
-        var result = JsonNode.Parse(new KpiHistoryCatalog().Search(
-            null, "net income year mean", null))!;
-
-        Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
-        Assert.Equal(56, result["options"]![0]!["kpiId"]!.GetValue<int>());
-        Assert.Equal("year", result["options"]![0]!["reportType"]!.GetValue<string>());
-    }
-
     [Theory]
     [InlineData(null, null, null)]
     [InlineData(0, null, null)]
