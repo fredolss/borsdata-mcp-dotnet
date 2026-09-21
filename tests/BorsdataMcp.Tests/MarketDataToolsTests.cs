@@ -9,6 +9,8 @@ namespace BorsdataMcp.Tests;
 
 public class MarketDataToolsTests
 {
+    private static readonly KpiHistoryCatalog HistoryCatalog = new();
+
     // Börsdata wraps both responses in envelope objects, confirmed against the live API.
     private const string InstrumentsFixture = """
     { "instruments": [
@@ -269,7 +271,7 @@ public class MarketDataToolsTests
         var client = CreateClient(out var stub);
 
         var result = JsonNode.Parse(await MarketDataTools.GetKpiHistory(
-            client, instrumentId: 236, kpiId: 2, reportType: "year", priceType: "mean", maxCount: 5))!;
+            client, HistoryCatalog, instrumentId: 236, kpiId: 2, reportType: "year", priceType: "mean", maxCount: 5))!;
 
         Assert.Equal("/v1/instruments/236/kpis/2/year/mean/history", stub.LastRequestUri!.AbsolutePath);
         Assert.Equal("maxCount=5", stub.LastRequestUri.Query.TrimStart('?'));
@@ -283,7 +285,7 @@ public class MarketDataToolsTests
         var client = CreateClient(out var stub);
 
         var result = JsonNode.Parse(await MarketDataTools.GetKpiHistoryArray(
-            client, kpiId: 2, reportType: "year", priceType: "mean", instrumentIds: "1,3", maxCount: 5))!;
+            client, HistoryCatalog, kpiId: 2, reportType: "year", priceType: "mean", instrumentIds: "1,3", maxCount: 5))!;
 
         Assert.Equal("/v1/instruments/kpis/2/year/mean/history", stub.LastRequestUri!.AbsolutePath);
         Assert.Equal("instList=1%2C3&maxCount=5", stub.LastRequestUri.Query.TrimStart('?'));
@@ -328,9 +330,26 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetKpiHistory(client, instrumentId: 236, kpiId: 2, reportType: "year", priceType: "mean");
+        await MarketDataTools.GetKpiHistory(
+            client, HistoryCatalog, instrumentId: 236, kpiId: 2, reportType: "year", priceType: "mean");
 
         Assert.Equal(string.Empty, stub.LastRequestUri!.Query);
+    }
+
+    [Fact]
+    public async Task GetKpiHistoryArray_InvalidCombinationIsRejectedBeforeApiCall()
+    {
+        var client = CreateClient(out var stub);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MarketDataTools.GetKpiHistoryArray(
+                client, HistoryCatalog, kpiId: 6, reportType: "year", priceType: "latest",
+                instrumentIds: "1,3", maxCount: 5));
+
+        Assert.StartsWith("INVALID_REQUEST:", error.Message);
+        Assert.Contains("6/year/latest", error.Message);
+        Assert.Contains("year/mean", error.Message);
+        Assert.Equal(0, stub.CallCount);
     }
 
     [Fact]

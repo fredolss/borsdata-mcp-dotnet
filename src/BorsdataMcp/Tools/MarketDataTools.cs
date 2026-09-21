@@ -134,16 +134,21 @@ public static class MarketDataTools
         CancellationToken cancellationToken) =>
         (await client.GetKpiScreenerAsync(instrumentId, kpiId, calcGroup, calc, cancellationToken))?.ToJsonString() ?? "{}";
 
-    [McpServerTool, Description("Gets historical values for a KPI (e.g. P/E) over time for one instrument — how the metric has trended across periods, unlike get_kpi_screener which returns a single current value. kpiId identifies the metric (see list_kpi_metadata); reportType/priceType follow the Börsdata KPI reference (https://borsdata.se/en/insights/api) and not every combination is valid for every KPI (an invalid one returns an HTTP 400 from Börsdata). Omit maxCount for the API's default window. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
+    [McpServerTool, Description("Gets historical values for a KPI (e.g. P/E) over time for one instrument — how the metric has trended across periods, unlike get_kpi_screener which returns a single current value. kpiId/reportType/priceType must be an exact combination from list_kpi_history_options; call that local lookup tool first when unsure and never guess. Omit maxCount for the API's default window. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetKpiHistory(
         BorsdataApiClient client,
+        KpiHistoryCatalog historyCatalog,
         [Description("The instrument's insId, from list_instruments.")] int instrumentId,
         [Description("The Börsdata KPI id, from list_kpi_metadata (e.g. 2 for P/E).")] int kpiId,
-        [Description("The report period, e.g. 'year' or 'r12'.")] string reportType,
-        [Description("The price/value basis, e.g. 'mean', 'high', 'low', 'latest'.")] string priceType,
+        [Description("The exact report type from list_kpi_history_options, e.g. 'year', 'r12', or 'quarter'.")] string reportType,
+        [Description("The exact price type from list_kpi_history_options, normally 'mean', 'high', or 'low'. 'latest' is not a history price type.")] string priceType,
         [Description("Maximum number of most recent periods to return. Optional.")] int? maxCount = null,
-        CancellationToken cancellationToken = default) =>
-        (await client.GetKpiHistoryAsync(instrumentId, kpiId, reportType, priceType, maxCount, cancellationToken))?.ToJsonString() ?? "{}";
+        CancellationToken cancellationToken = default)
+    {
+        historyCatalog.Validate(kpiId, reportType, priceType);
+        return (await client.GetKpiHistoryAsync(
+            instrumentId, kpiId, reportType, priceType, maxCount, cancellationToken))?.ToJsonString() ?? "{}";
+    }
 
     [McpServerTool, Description(
         "Gets historical values for a KPI (e.g. P/E) over time for a LIST of instruments in one " +
@@ -152,24 +157,28 @@ public static class MarketDataTools
         "endpoint from get_kpi_list_screener (different Börsdata tag, different path params — " +
         "reportType/priceType here, not calcGroup/calc) and, unlike get_kpi_list_screener, this one " +
         "DOES filter server-side by instrumentIds — real API-level scoping, not something faked " +
-        "client-side. kpiId identifies the metric (see list_kpi_metadata); reportType/priceType " +
-        "follow the Börsdata KPI reference (https://borsdata.se/en/insights/api) and not every " +
-        "combination is valid for every KPI (an invalid one returns an HTTP 400 from Börsdata). " +
+        "client-side. kpiId/reportType/priceType must be an exact combination from " +
+        "list_kpi_history_options; call that local lookup tool first when unsure and never guess. " +
         "Returns one entry per requested instrument, each with its own history array (or an error " +
         "field if that instrument's history couldn't be resolved). maxCount caps periods per " +
         "instrument (Börsdata's own limit: 20 for 'year', 40 for 'r12'/'quarter'), not the number " +
-        "of instruments returned.")]
+        "of instruments returned. Börsdata accepts at most 50 instrument IDs per call.")]
     public static async Task<string> GetKpiHistoryArray(
         BorsdataApiClient client,
+        KpiHistoryCatalog historyCatalog,
         [Description("The Börsdata KPI id, from list_kpi_metadata (e.g. 2 for P/E).")] int kpiId,
-        [Description("The report period, e.g. 'year' or 'r12'.")] string reportType,
-        [Description("The price/value basis, e.g. 'mean', 'high', 'low', 'latest'.")] string priceType,
+        [Description("The exact report type from list_kpi_history_options, e.g. 'year', 'r12', or 'quarter'.")] string reportType,
+        [Description("The exact price type from list_kpi_history_options, normally 'mean', 'high', or 'low'. 'latest' is not a history price type.")] string priceType,
         [Description("Comma-separated instrument insIds, from list_instruments. Required — Börsdata's own " +
-            "API requires this for this endpoint.")]
+            "API requires this for this endpoint and accepts at most 50 IDs per call.")]
         string instrumentIds,
         [Description("Maximum number of most recent periods to return per instrument. Optional.")] int? maxCount = null,
-        CancellationToken cancellationToken = default) =>
-        (await client.GetKpiHistoryArrayAsync(kpiId, reportType, priceType, instrumentIds, maxCount, cancellationToken))?.ToJsonString() ?? "{}";
+        CancellationToken cancellationToken = default)
+    {
+        historyCatalog.Validate(kpiId, reportType, priceType);
+        return (await client.GetKpiHistoryArrayAsync(
+            kpiId, reportType, priceType, instrumentIds, maxCount, cancellationToken))?.ToJsonString() ?? "{}";
+    }
 
     [McpServerTool, Description("Gets every KPI Börsdata tracks (P/E, revenue growth, margins, etc.) for one instrument across multiple periods in one call — unlike get_kpi_screener, which returns a single value for one specific KPI. Each entry is keyed by KpiId (see list_kpi_metadata to resolve names); omit maxCount for the API's default number of periods per KPI. Also works transparently for a global (non-Nordic, Pro+) instrument's insId — discover one via list_instruments with includeGlobal:true.")]
     public static async Task<string> GetKpiSummary(

@@ -7,6 +7,23 @@ namespace BorsdataMcp.Tools;
 public static class ScreeningTools
 {
     [McpServerTool, Description(
+        "Looks up the exact kpiId/reportType/priceType combinations accepted by get_kpi_history " +
+        "and get_kpi_history_array. The data comes from a complete local copy of Börsdata's " +
+        "official KPI History table, so this call makes no Börsdata API request. Use kpiId after " +
+        "resolving a metric with list_kpi_metadata, or search by KPI name. Call this before either " +
+        "history tool whenever the exact combination is unknown; never invent priceType values. " +
+        "Example: earnings/share (KPI 6) supports year/mean, not year/latest.")]
+    public static string ListKpiHistoryOptions(
+        KpiHistoryCatalog catalog,
+        [Description("Optional exact KPI id, normally obtained from list_kpi_metadata.")]
+        int? kpiId = null,
+        [Description("Optional case-insensitive, word-order-independent search across KPI name, description, reportType, and priceType. Common financial aliases such as 'net income' are supported.")]
+        string? query = null,
+        [Description("Maximum combinations to return. Default 100; maximum 200.")]
+        int? maxCount = null) =>
+        catalog.Search(kpiId, query, maxCount);
+
+    [McpServerTool, Description(
         "Looks up the exact calcGroup/calc combinations accepted by Börsdata's KPI screener " +
         "endpoints. The data comes from a complete local copy of Börsdata's official KPI Screener " +
         "List, so this call makes no Börsdata API request. Use kpiId after resolving a metric with " +
@@ -18,7 +35,7 @@ public static class ScreeningTools
         KpiScreenerCatalog catalog,
         [Description("Optional exact KPI id, normally obtained from list_kpi_metadata.")]
         int? kpiId = null,
-        [Description("Optional case-insensitive search across English KPI name, description, calcGroup, and calc.")]
+        [Description("Optional case-insensitive, word-order-independent search across English KPI name, description, calcGroup, and calc. Common financial aliases such as 'net income' are supported.")]
         string? query = null,
         [Description("Maximum combinations to return. Default 100; maximum 200.")]
         int? maxCount = null) =>

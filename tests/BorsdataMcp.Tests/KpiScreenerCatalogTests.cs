@@ -41,6 +41,29 @@ public class KpiScreenerCatalogTests
         Assert.Equal(3, result["options"]!.AsArray().Count);
     }
 
+    [Fact]
+    public void LookupMatchesTermsRegardlessOfOrder()
+    {
+        var result = JsonNode.Parse(new KpiScreenerCatalog().Search(
+            null, "earnings growth 5year CAGR", null))!;
+
+        Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
+        var option = result["options"]![0]!;
+        Assert.Equal(97, option["kpiId"]!.GetValue<int>());
+        Assert.Equal("5year", option["calcGroup"]!.GetValue<string>());
+        Assert.Equal("cagr", option["calc"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void LookupMapsNetIncomeAliasToEarningsKpi()
+    {
+        var result = JsonNode.Parse(new KpiScreenerCatalog().Search(
+            null, "net income 5year cagr", null))!;
+
+        Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
+        Assert.Equal(56, result["options"]![0]!["kpiId"]!.GetValue<int>());
+    }
+
     [Theory]
     [InlineData(null, null, null)]
     [InlineData(0, null, null)]
