@@ -76,17 +76,29 @@ public class ReferenceDataToolsTests
     ] }
     """;
 
+    // Matches Börsdata's CompaniesDescriptionArrayRespV1/CompanyDescriptionV1 schema (confirmed
+    // against the OpenAPI spec at apidoc.borsdata.se/swagger/v1/swagger.json) — keyed by "list",
+    // each entry has "insId" plus languageCode/text, with an optional per-entry "error" field.
+    private const string InstrumentDescriptionsFixture = """
+    { "list": [
+      { "insId": 1, "languageCode": "en", "text": "Volvo is a Swedish manufacturer." },
+      { "insId": 999, "error": "Instrument not found" }
+    ] }
+    """;
+
     private sealed class StubHandler : DelegatingHandler
     {
         private readonly TimeSpan delay;
         private int callCount;
         public int CallCount => callCount;
+        public Uri? LastRequestUri { get; private set; }
 
         public StubHandler(TimeSpan delay = default) => this.delay = delay;
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref callCount);
+            LastRequestUri = request.RequestUri;
             if (delay > TimeSpan.Zero)
                 await Task.Delay(delay, cancellationToken);
             var path = request.RequestUri!.AbsolutePath;
@@ -96,6 +108,7 @@ public class ReferenceDataToolsTests
                 : path.Contains("reports/metadata") ? ReportMetadataFixture
                 : path.Contains("translationmetadata") ? TranslationMetadataFixture
                 : path.Contains("instruments/updated") ? InstrumentsUpdatedFixture
+                : path.Contains("instruments/description") ? InstrumentDescriptionsFixture
                 : path.Contains("instruments/global") ? GlobalInstrumentsFixture
                 : InstrumentsFixture;
             return new HttpResponseMessage(HttpStatusCode.OK)
@@ -361,6 +374,22 @@ public class ReferenceDataToolsTests
         await ReferenceDataTools.ListTranslationMetadata(client, CancellationToken.None);
 
         Assert.Equal(1, stub.CallCount);
+    }
+
+    [Fact]
+    public async Task GetInstrumentDescriptions_BuildsCorrectPathAndQuery_AndReturnsRawResponse()
+    {
+        var client = CreateClient(out var stub);
+
+        var result = JsonNode.Parse(await ReferenceDataTools.GetInstrumentDescriptions(
+            client, instrumentIds: "1,999", CancellationToken.None))!;
+
+        Assert.Equal("/v1/instruments/description", stub.LastRequestUri!.AbsolutePath);
+        Assert.Equal("instList=1%2C999", stub.LastRequestUri.Query.TrimStart('?'));
+        var list = result["list"]!.AsArray();
+        Assert.Equal(2, list.Count);
+        Assert.Equal("Volvo is a Swedish manufacturer.", list[0]!["text"]!.GetValue<string>());
+        Assert.Equal("Instrument not found", list[1]!["error"]!.GetValue<string>());
     }
 
     [Fact]

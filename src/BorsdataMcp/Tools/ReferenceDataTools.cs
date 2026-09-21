@@ -23,9 +23,8 @@ public static class ReferenceDataTools
         [Description("Case-insensitive substring match against the instrument's name, ticker, or ISIN. Optional.")]
         string? search = null,
         [Description("Filter to instruments on this market id, from list_markets. Optional. To screen a KPI " +
-            "(e.g. P/E) across just this market with no other instrumentIds in hand, pass marketId directly " +
-            "to get_kpi_list_screener_all_instruments instead — it takes the same market/country/sector/branch " +
-            "filters natively, no need to resolve insIds here first.")]
+            "(e.g. P/E) across just this market, call this first to resolve insIds, then pass them as " +
+            "get_kpi_list_screener's instrumentIds — that endpoint has no market filter of its own.")]
         int? marketId = null,
         [Description("Filter to instruments in this country id, from list_countries. Optional.")]
         int? countryId = null,
@@ -131,7 +130,7 @@ public static class ReferenceDataTools
     public static async Task<string> ListCountries(BorsdataApiClient client, CancellationToken cancellationToken) =>
         (await client.GetCountriesAsync(cancellationToken))?.ToJsonString() ?? "{}";
 
-    [McpServerTool, Description("Lists all KPIs known to Börsdata (kpiId, Swedish/English name, display format, whether the value is a string). Use this to find the kpiId for get_kpi_screener/get_kpi_history/get_kpi_list_screener/get_kpi_list_screener_all_instruments — e.g. P/E, dividend yield.")]
+    [McpServerTool, Description("Lists all KPIs known to Börsdata (kpiId, Swedish/English name, display format, whether the value is a string). Use this to find the kpiId for get_kpi_screener/get_kpi_history/get_kpi_list_screener — e.g. P/E, dividend yield.")]
     public static async Task<string> ListKpiMetadata(BorsdataApiClient client, CancellationToken cancellationToken) =>
         (await client.GetKpiMetadataAsync(cancellationToken))?.ToJsonString() ?? "{}";
 
@@ -142,6 +141,18 @@ public static class ReferenceDataTools
     [McpServerTool, Description("Lists Börsdata's translation table (translationKey plus Swedish/English name) used for various coded labels across the API, e.g. sector/branch names.")]
     public static async Task<string> ListTranslationMetadata(BorsdataApiClient client, CancellationToken cancellationToken) =>
         (await client.GetTranslationMetadataAsync(cancellationToken))?.ToJsonString() ?? "{}";
+
+    [McpServerTool, Description(
+        "Gets Swedish/English company description text for a list of instruments in one call — a " +
+        "direct mirror of Börsdata's own \"Instrument Description\" endpoint, capped at 50 " +
+        "instruments per call (Börsdata's own limit). Returns one entry per instrument: " +
+        "{ insId, languageCode, text } (or an error field if that instrument's description " +
+        "couldn't be resolved).")]
+    public static async Task<string> GetInstrumentDescriptions(
+        BorsdataApiClient client,
+        [Description("Comma-separated instrument insIds, from list_instruments. Max 50.")] string instrumentIds,
+        CancellationToken cancellationToken) =>
+        (await client.GetInstrumentDescriptionsAsync(instrumentIds, cancellationToken))?.ToJsonString() ?? "{}";
 
     [McpServerTool, Description(
         "Lists all stock splits and reverse splits across Börsdata's instruments — split date, " +

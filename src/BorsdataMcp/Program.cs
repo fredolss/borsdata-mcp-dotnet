@@ -2,6 +2,7 @@ using BorsdataMcp;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ModelContextProtocol;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -29,9 +30,27 @@ builder.Services
     .AddHttpMessageHandler<AuthKeyHandler>()
     .AddHttpMessageHandler<RateLimitHandler>();
 
+// Only exceptions of type McpException have their .Message forwarded to the calling MCP
+// client (ModelContextProtocol.Server.McpServerImpl.CreateToolCallErrorResult) — every other
+// exception collapses to a bare "An error occurred invoking 'X'." with zero detail. Confirmed
+// live: a calling model that hit this got no information to self-correct on, retried an
+// identical failing call six times, then abandoned the bulk tool entirely for a ~164-call
+// per-instrument fallback. This filter converts any other exception into one whose message
+// does get forwarded, project-wide, for every tool regardless of registration path.
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly()
+    .WithRequestFilters(f => f.AddCallToolFilter(next => async (request, ct) =>
+    {
+        try
+        {
+            return await next(request, ct);
+        }
+        catch (Exception ex) when (ex is not McpException)
+        {
+            throw new McpException(ex.Message, ex);
+        }
+    }));
 
 await builder.Build().RunAsync();

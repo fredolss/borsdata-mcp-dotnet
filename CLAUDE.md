@@ -46,6 +46,27 @@ for why, if you're tempted to reintroduce it for this project.
   `AddMcpServer().WithStdioServerTransport().WithToolsFromAssembly()`.
   Tool classes need no manual registration — anything decorated with
   `[McpServerToolType]` in the assembly is picked up automatically.
+  `Program.cs` also chains a `.WithRequestFilters(f => f.AddCallToolFilter(...))`
+  onto that same builder — confirmed by reading the installed
+  `ModelContextProtocol` 2.2.0 SDK source
+  (`McpServerImpl.CreateToolCallErrorResult`) that **only exceptions of
+  type `ModelContextProtocol.McpException` have their `.Message` forwarded
+  to the calling MCP client**; every other exception thrown by any tool —
+  a plain `ArgumentException`, `HttpRequestException`, anything — collapses
+  to a bare `"An error occurred invoking 'X'."` with zero detail, no matter
+  how informative the real exception message was. This filter catches any
+  non-`McpException` and rethrows it as `new McpException(ex.Message, ex)`,
+  so its message does get forwarded, for every tool regardless of
+  registration path (confirmed: `AddCallToolFilter` composes inside
+  `McpServerImpl`'s single shared dispatcher, the same one
+  `WithToolsFromAssembly()`-registered tools all go through). This is what
+  motivated `GetKpiListScreener`'s own validation to explicitly throw
+  `McpException` rather than relying on this filter alone — see its own
+  bullet below for why a hard-required C# parameter didn't work here even
+  though this filter exists. Also fixes `GetKpiHistory`'s previously-silent
+  Börsdata-400 `HttpRequestException` (see its own bullet) the same way,
+  with no changes needed there — the filter is what makes the message
+  reach the caller now, not a per-tool change.
 - **Logging must go to stderr, never stdout.** The stdio transport uses
   stdout exclusively for JSON-RPC protocol messages; anything else written
   there corrupts the protocol stream. This is why `Program.cs` sets
@@ -230,66 +251,303 @@ for why, if you're tempted to reintroduce it for this project.
     `GetInstrumentsAsync()` list; instruments not present in that list —
     confirmed live for some low/near-zero-value entries, likely delisted
     or non-Nordic instruments — come back with `value` but no
-    `ticker`/`name`. Supports `instrumentIds` (comma-separated, e.g. a
-    resolved set of holdings), `minValue`/`maxValue`, `sortDescending`,
-    and the same nullable/uncapped `maxCount` convention as
-    `ListInstruments` — for the same reason: this endpoint has the exact
-    same "several thousand entries in one response" problem `ListInstruments`
-    had, just for KPI values instead of instrument metadata. Also takes
-    `marketId`/`countryId`/`sectorId`/`branchId` (same ids as
-    `ListInstruments`' own filters), resolved against the cached instrument
-    list via `InstrumentLookup.FilterIdsByAttributes` and ANDed with
-    `instrumentIds` if both are given — added after confirming live,
-    repeatedly, that a calling model would resolve a market's insIds via
-    `ListInstruments` and then still call this tool without them, screening
-    the entire ~14,000-instrument universe; letting this endpoint filter by
-    the same attributes itself removes the two-call chain that kept getting
-    skipped.
-  - **`GetKpiListScreener` requires `instrumentIds`** (not optional) and
-    `GetKpiListScreenerAllInstruments` is a second, separate tool for when
-    there genuinely are none — a split made after *three* rounds of
-    progressively more explicit `[Description]` wording (v1: "prefer
-    instrumentIds to keep the response small" — this backfired, see below;
-    v2: an explicit "STEP 1/STEP 2" instruction to always chain
-    `ListInstruments` → `instrumentIds`; v3: "ONE call is enough" moved to
-    the very first sentence) all failed to reliably stop a real Claude
-    Desktop chat session from calling this tool without `instrumentIds` it
-    had already resolved in the same conversation, confirmed live across
-    multiple separate sessions — including one where the *very build*
-    containing v3's wording and the new attribute-filter params was
-    installed and active, and the model still ignored `marketId` entirely
-    and called the tool bare. Optional parameters are, in practice, a
-    suggestion a calling model can silently ignore no matter how the prose
-    is worded; a required parameter is a schema validation failure the
-    client cannot skip. Splitting into two tools also plays to what
-    tool-calling models are empirically more reliable at — picking the
-    right tool by name from a short list — rather than correctly deciding
-    whether to populate one optional field inside a multi-purpose tool.
-    `GetKpiListScreenerAllInstruments` has no `instrumentIds` parameter at
-    all (not just an unused optional one) and its own `[Description]`
-    explicitly redirects: if the caller already has `instrumentIds`, use
-    `GetKpiListScreener` instead, since only that tool actually applies
-    them. The earlier, related finding that `minValue`/`maxValue` also got
-    invented unprompted (the v1 wording literally suggested them as a
-    response-size knob, which was wrong — they're a value filter, not a
-    truncation control) is addressed the same way on both tools: their
-    `[Description]`s now say to only set them when the user's request
-    states an actual numeric threshold, never to shrink output. Both tools
-    share the same private `BuildKpiListScreenerResult` helper (which still
-    takes a nullable `instrumentIds` internally — `GetKpiListScreener`
-    always passes a non-null value, `GetKpiListScreenerAllInstruments`
-    always passes `null`), so there's no duplicated filtering/sorting/
-    enrichment logic between them, only duplicated parameter surface.
-  - `GetLatestStockPrices`, `GetStockPricesByDate`, and `GetKpiListScreener`
-    each additionally take an optional `global` bool (default `false`).
-    Unlike `ListInstruments`' `includeGlobal`, this *switches* the data
-    source rather than merging it — confirmed live global counterparts
-    exist for all three (`instruments/stockprices/global/last`,
-    `instruments/stockprices/global/date`, `instruments/global/kpis/
-    {kpiId}/{calcGroup}/{calc}` — note the last one puts `global` right
-    after `instruments/`, not appended like the other two, matching
-    Börsdata's own URL layout). These three are cached under the much
-    shorter `MarketDataCacheTtl` (1h) rather than `ReferenceDataCacheTtl`
+    `ticker`/`name`. Takes only `kpiId`/`calcGroup`/`calc` — no `sortDescending`,
+    `maxCount`, `minValue`/`maxValue`, or `global` bool (the last split
+    into a separate `GetGlobalKpiListScreener` tool). Every one of those
+    was removed over the course of this session; see design 7/8 below for
+    why each one specifically went, since they weren't all removed for
+    the same reason.
+  - **Scoping `GetKpiListScreener` went through eight different designs
+    this session before landing on the current one** — worth reading in
+    full before changing this tool again, since each earlier design looked
+    reasonable and failed for a specific, confirmed-live reason:
+    1. *Everything optional, `[Description]`-only guidance.* `instrumentIds`
+       (comma-separated string), `marketId`/`countryId`/`sectorId`/
+       `branchId` (resolved against the cached instrument list via
+       `InstrumentLookup.FilterIdsByAttributes`, ANDed with `instrumentIds`
+       if both given) were all optional, with the burden entirely on prose
+       to get a calling model to (a) always pass a scope it already had and
+       (b) prefer the cheap `marketId` filter over a long resolved
+       `instrumentIds` list. Three progressively more explicit wording
+       rounds (v1: "prefer instrumentIds to keep the response small" — this
+       backfired, see the `minValue`/`maxValue` note below; v2: an explicit
+       "STEP 1/STEP 2" instruction to always chain `ListInstruments` →
+       `instrumentIds`; v3: "ONE call is enough" moved to the very first
+       sentence) all failed to reliably stop a real Claude Desktop session
+       from calling this tool without `instrumentIds` it had already
+       resolved in the same conversation — confirmed live across multiple
+       separate sessions, including one where the *very build* containing
+       v3's wording and the new attribute-filter params was installed and
+       active, and the model still ignored `marketId` entirely and called
+       the tool bare. Conclusion: optional parameters are, in practice, a
+       suggestion a calling model can silently ignore no matter how the
+       prose is worded.
+    2. *Split into two tools, `instrumentIds` required on one of them.*
+       `GetKpiListScreenerAllInstruments` was added as a second tool with
+       no `instrumentIds` parameter at all, for when there genuinely were
+       none; `GetKpiListScreener`'s `instrumentIds` was made a hard C#
+       required parameter (no default), forcing the generated JSON schema
+       to mark it `required: true`, on the theory that a required parameter
+       is a schema validation failure a client can't skip, unlike an
+       optional one — and that tool *selection* is something calling models
+       are empirically more reliable at than correctly populating one
+       optional field inside a multi-purpose tool. Confirmed live this made
+       things *worse*, not better: a session called the tool without
+       `instrumentIds` for a genuinely unscoped query, and the missing-
+       parameter check fired in the SDK's own argument marshaller
+       (`Microsoft.Extensions.AI.AIFunctionFactory`) *before* this method's
+       body ever ran, as a plain `System.ArgumentException`. Reading the
+       installed `ModelContextProtocol` 2.2.0 SDK source
+       (`McpServerImpl.CreateToolCallErrorResult`) explains why that
+       mattered: **only exceptions of type `ModelContextProtocol.McpException`
+       have their `.Message` forwarded to the calling client** — every
+       other exception, that `ArgumentException` included, collapses to a
+       bare `"An error occurred invoking 'get_kpi_list_screener'."` with
+       zero diagnostic content, regardless of how informative the real
+       exception message was. The calling model had nothing to self-correct
+       on: it retried the identical failing call six times, never once
+       called `GetKpiListScreenerAllInstruments` (confirmed absent from the
+       entire session log), then abandoned bulk screening entirely and fell
+       back to ~164 individual per-instrument calls. Switching
+       `instrumentIds` back to `string? instrumentIds = null` with an
+       explicit `string.IsNullOrWhiteSpace` check that threw `McpException`
+       (whose `.Message` *does* get forwarded) fixed that specific failure
+       — confirmed live afterward: a market-scoped query flowed correctly
+       in one shot (`list_markets` → `list_instruments(marketId)` →
+       `get_kpi_list_screener(instrumentIds)`, no wasted unscoped call).
+    3. *Still two tools; the model reliably used `instrumentIds` over
+       `marketId` even after design 2's fix landed.* With the missing-
+       parameter case now fixed, live testing surfaced a different,
+       narrower problem: a session that had already resolved a market's
+       full `instrumentIds` list via `ListInstruments` kept passing that
+       list to `GetKpiListScreener` instead of switching to
+       `GetKpiListScreenerAllInstruments` with the cheaper `marketId`
+       filter — even after both tools' `[Description]`s were rewritten
+       multiple times to explicitly say "already having the ids in hand is
+       not a reason to prefer this tool." This is the key realization that
+       ended the two-tool approach: **`marketId`/`sectorId`/etc and
+       `instrumentIds` are both applied purely client-side, in this same
+       process, against the same cached full-universe fetch** — Börsdata's
+       API itself is never filtered by either, so there is genuinely no
+       server-load difference between the two approaches, only a request-
+       payload-size difference for the calling model. Once that was
+       understood, pushing a calling model to prefer one filter over the
+       other via description text was solving a problem that barely
+       mattered in the first place, and — consistent with every other
+       finding in this saga — prose-level preferences between two
+       functionally-equivalent options were not something wording could
+       reliably enforce anyway.
+    4. *One tool, `instrumentIds` as a real `int[]?` array (not a
+       comma-separated string), plus `marketId`/`countryId`/`sectorId`/
+       `branchId` still on this same tool, with the `McpException`-on-
+       missing-scope pattern from design 2 generalized to "at least one of
+       `instrumentIds`/`marketId`/`countryId`/`sectorId`/`branchId` must be
+       set."* `GetKpiListScreenerAllInstruments` was deleted;
+       `InstrumentLookup` gained a second `ParseIds(int[]?)` overload
+       (trivial — null/empty check plus `.ToHashSet()`, no string parsing)
+       alongside the original `ParseIds(string?)` still used by every
+       *other* tool's comma-separated `instrumentIds`. This design kept the
+       one thing from design 2 that was actually validated as correctness-
+       motivated (never silently screen all ~14,000 instruments when *some*
+       scope was intended) while dropping the thing that wasn't pulling its
+       weight (two similarly-named tools whose only real difference was an
+       unenforceable efficiency preference). Short-lived: it still carried
+       `FilterIdsByAttributes` and the whole `marketId`/etc parameter
+       surface forward from design 3, which design 5 below removed.
+    5. *`marketId`/`countryId`/`sectorId`/`branchId` are
+       gone from this tool entirely — `instrumentIds` (`int[]?`) is the
+       only scope mechanism.* Prompted directly by the same insight that
+       ended design 3 (client-side filtering means `marketId` and
+       `instrumentIds` cost the same), taken one step further: if there's
+       no cost reason to prefer one over the other, there's also no reason
+       to *maintain two parallel filtering mechanisms* on this one tool —
+       `ListInstruments` already resolves `marketId`/`countryId`/`sectorId`/
+       `branchId` into insIds perfectly well, confirmed working live as a
+       two-call chain (`ListInstruments(marketId)` → `GetKpiListScreener(
+       instrumentIds)`), so duplicating that resolution logic here via
+       `InstrumentLookup.FilterIdsByAttributes` was pure surface area for
+       no benefit. `FilterIdsByAttributes` and its private `GetInt` helper
+       were deleted from `InstrumentLookup.cs` (nothing else used them).
+       `instrumentIds` stays `int[]? instrumentIds = null` rather than a
+       hard-required parameter, for the same reason established in design
+       2 — the SDK's own required-parameter `ArgumentException` isn't an
+       `McpException`, so its message would never reach the client; the
+       explicit `if (instrumentIds is null || instrumentIds.Length == 0)`
+       check at the top of the method body throwing `McpException` is what
+       actually gets a useful message through. That message now points the
+       caller at `ListInstruments` rather than a sibling tool — there still
+       isn't one, and now there's also no second filter mechanism on this
+       tool to redirect to.
+    6. *`instrumentIds` is gone too — `GetKpiListScreener`
+       takes no instrument-level filter at all.* Prompted by actually
+       reading Börsdata's own OpenAPI spec
+       (apidoc.borsdata.se/swagger/v1/swagger.json) rather than assuming:
+       the underlying endpoint this tool calls
+       (`instruments/kpis/{kpiId}/{calcGroup}/{calc}`, Börsdata operationId
+       `kpislistv1`, tag "Kpi Screener") has **no `instList` parameter at
+       all** — confirmed directly from the spec's parameter list (just
+       `kpiId`/`calcGroup`/`calc`/`authKey`). Every `instrumentIds` design
+       this tool ever had (designs 1 through 5 above) was therefore always
+       a *client-side-only* filter dressed up to look like real API
+       scoping — Börsdata's server always returns literally every
+       instrument regardless of what was passed, and design 2's whole
+       "required scope prevents an accidental full-universe screen" premise
+       was validating against a fiction, since the full universe was
+       always fetched either way; only the *client-side* filtering step
+       was ever being skipped. `GetKpiListScreener` is now a **direct,
+       unmodified mirror of Börsdata's `kpislistv1` endpoint**: kpiId/
+       calcGroup/calc (+ `minValue`/`maxValue`/`sortDescending`/`maxCount`/
+       `global` as legitimate client-side post-processing — these don't
+       misrepresent what the API does, they just shape the already-fetched
+       full response) and nothing else. For specific instruments, the
+       correct tool is `GetKpiScreener` (`kpisv1`, one insId per call) —
+       "the client must make multiple calls instead of the one taking the
+       instrument id," in the words that prompted this change — since
+       that's the endpoint Börsdata actually built for per-instrument
+       scoping. `InstrumentLookup.ParseIds(int[]?)` was deleted (nothing
+       uses it anymore); `BuildKpiListScreenerResult` dropped its
+       `instrumentIds`/`idFilter` parameters entirely. This same spec-
+       reading pass also surfaced four genuinely missing endpoints Börsdata
+       exposes that this project had no tool for at all — see
+       `GetKpiHistoryArray`/`GetReportsCompound`/`GetReportsArray`/
+       `GetInstrumentDescriptions` below — found specifically because they
+       share the same `instruments/kpis/{kpiId}/...`-shaped URL prefix as
+       `GetKpiListScreener` and were easy to conflate with it during this
+       investigation despite being on a different Börsdata tag ("Kpi
+       History") with different path params and, unlike `kpislistv1`,
+       *do* accept `instList` server-side for real.
+    7. *`minValue`/`maxValue` are gone too, and `global`
+       became a separate tool (`GetGlobalKpiListScreener`) instead of a
+       bool parameter.* Prompted by extending design 6's own principle
+       ("does this parameter misrepresent server-side capability, and is
+       there an alternative that actually has the capability?") past
+       `instrumentIds` to the rest of the parameter list — but this time
+       the answer differed per parameter, not uniformly "remove it," and
+       that distinction is worth keeping straight:
+       - `global` was never client-side at all — it always switched which
+         real Börsdata endpoint got called (`kpislistv1` vs
+         `kpislistglobalv1`), so nothing about it was ever a "fake"
+         parameter. It moved to a separate tool anyway, to mirror
+         Börsdata's own two-separate-endpoints structure directly (one
+         tool per endpoint, consistent with how `GetKpiScreener`/
+         `GetKpiHistory`/etc. already don't have a `global` switch either
+         — `GetLatestStockPrices`/`GetStockPricesByDate` still do, and
+         weren't touched here; this change was scoped to
+         `GetKpiListScreener` specifically, not applied project-wide).
+       - `sortDescending`/`maxCount` stayed. They're genuinely different
+         from `instrumentIds`: they reorder/truncate an already-fully-
+         fetched, fixed-size response — they never claimed to reduce what
+         Börsdata computed or sent, so there was no false mental model to
+         correct. Removing `maxCount` specifically would have resurrected
+         a real, already-fixed bug: an unbounded ~14,000-entry dump that
+         once broke at least one MCP client's rendering (see
+         `ListInstruments` above).
+       - `minValue`/`maxValue` were removed, on explicit instruction,
+         despite this session initially pushing back that they're not
+         analogous to `instrumentIds` either: Börsdata's API has no
+         server-side value-threshold filter on *any* endpoint, so unlike
+         `instrumentIds` (where `GetKpiScreener` covers the same need
+         through the correct endpoint), removing these doesn't redirect to
+         an alternative tool — it deletes value-threshold screening (e.g.
+         "P/E under 15") from this project's capability entirely, with no
+         replacement anywhere. Kept here as a deliberate, acknowledged
+         trade-off rather than a discovery like the others in this list —
+         if that capability is wanted back later, it has no natural home
+         on any existing tool and would need a new one, since no Börsdata
+         endpoint does this filtering server-side either.
+       `BuildKpiListScreenerResult` lost its `minValue`/`maxValue`
+       parameters and the filtering block that used them; `GetKpiListScreener`
+       lost `global` (now calls `GetKpiListScreenerAsync`/`GetInstrumentsAsync`
+       unconditionally); the new `GetGlobalKpiListScreener` tool calls
+       `GetGlobalKpiListScreenerAsync`/`GetGlobalInstrumentsAsync`
+       unconditionally, sharing the same (now-simplified)
+       `BuildKpiListScreenerResult` helper.
+    8. **Current design: `sortDescending`/`maxCount` are gone too — both
+       `GetKpiListScreener` and `GetGlobalKpiListScreener` now take only
+       `kpiId`/`calcGroup`/`calc`, nothing else.** Explicit instruction to
+       finish what design 7 stopped short of: design 7's own reasoning for
+       *keeping* these two ("they reorder/truncate an already-fetched
+       response, they never claimed to reduce what Börsdata computed, so
+       there's no false mental model to correct") was accurate but, on
+       reflection when asked to remove them anyway, beside the real point
+       being made across designs 6 through 8 as a whole — that this tool
+       should be a maximally literal mirror of `kpislistv1`'s actual
+       surface, full stop, not "mirror it, plus whatever convenience
+       shaping seems harmless." `BuildKpiListScreenerResult` no longer
+       sorts, filters, or takes a subset at all — it just walks Börsdata's
+       `values` array in whatever order it arrived in and enriches each
+       entry with `ticker`/`name`, nothing more. The response envelope
+       also dropped `totalMatched`/`returned` (they only meant anything
+       when a cap could make `returned < totalMatched`; with no cap they'd
+       always be equal to each other and to `values.Length`, so keeping
+       them would just be redundant surface, not a live tool preserved
+       here — same instinct as removing the parameters). This does bring
+       back, deliberately and knowingly, the exact "unbounded ~14,000-
+       entry response" risk flagged in design 7 (see the `ListInstruments`
+       precedent above) — no mitigation was added for it, since none was
+       asked for; if this becomes a real problem again, that's the fix to
+       revisit, not a reason to silently re-add `maxCount`.
+  - **Four tools added after actually reading Börsdata's OpenAPI spec**
+    (apidoc.borsdata.se/swagger/v1/swagger.json) surfaced endpoints this
+    project had never implemented, despite looking similar to existing
+    ones:
+    - `GetKpiHistoryArray` (`GET instruments/kpis/{kpiId}/{reportType}/
+      {priceType}/history`, operationId `histarraykpisv1`, tag "Kpi
+      History") — KPI history for a *list* of instruments in one call, the
+      bulk counterpart to `GetKpiHistory`. Easy to confuse with
+      `GetKpiListScreener`'s endpoint at a glance (same
+      `instruments/kpis/{kpiId}/...` prefix) but genuinely different:
+      different tag, `reportType`/`priceType` path params (not
+      `calcGroup`/`calc`), and — unlike `kpislistv1` — `instList` is a real,
+      *required* server-side parameter here (confirmed in the spec), so
+      `instrumentIds` is a required `string` (comma-separated, matching
+      every other `instList`-backed tool's convention) with no client-side
+      filtering needed at all. Response envelope is `kpisList`, keyed by
+      `instrument` (not `insId`) with an optional per-entry `error` field
+      — a plain pass-through, same as `GetKpiHistory`/`GetReports`.
+    - `GetReportsCompound` (`GET instruments/{id}/reports`, operationId
+      `reportscompoundv1`, tag "Reports") — all three report types (year/
+      quarter/r12) for *one* instrument in a single call, instead of three
+      separate `GetReports` calls. `maxYearCount`/`maxR12QCount`/`original`
+      match Börsdata's own param names and defaults (10/10, max 20/40;
+      `original` is Börsdata's 0/1 "return original currency" flag, exposed
+      as a `bool?`). Plain pass-through, no envelope wrapper — `instrument`
+      plus the three `reports*` arrays directly at the top level.
+    - `GetReportsArray` (`GET instruments/reports`, operationId
+      `reportsarrayv1`, tag "Reports") — the bulk, list-of-instruments
+      version of `GetReportsCompound`; `instList` is required (confirmed in
+      the spec). Envelope key is `reportList`, each entry keyed by
+      `instrument` (not `insId`) with an optional per-entry `error` field —
+      same shape family as `GetKpiHistoryArray`.
+    - `GetInstrumentDescriptions` (`GET instruments/description`,
+      operationId literally `"Instrument Description"` in Börsdata's spec
+      — the one operationId that doesn't follow their usual lowercase-v1
+      naming convention) — Swedish/English company description text for a
+      list of instruments, capped at 50 per call (confirmed in the spec's
+      own parameter description). Lives in `ReferenceDataTools.cs` rather
+      than `MarketDataTools.cs` since it's identity/content data about
+      instruments rather than financial data, though — like the other
+      three tools here — it's deliberately *not* cached: it takes an
+      arbitrary `instList` per call (unbounded distinct cache keys) the
+      same way `GetReportsAsync`/`GetReportCalendarAsync`/etc. already
+      don't cache for the same reason. Envelope key is `list`, each entry
+      `{ insId, languageCode, text }` with an optional per-entry `error`
+      field.
+    All four are plain pass-throughs (no client-side enrichment with
+    ticker/name) — deliberately consistent with the existing
+    `GetReportCalendar`/`GetDividendCalendar`/`GetInsiderHoldings`/
+    `GetBuybackHoldings` family (bulk endpoints scoped by a caller-supplied
+    `instrumentIds` the caller already knows), not the
+    `GetKpiListScreener`/`GetShortHoldings`/`GetLatestStockPrices` family
+    (truly *unscoped*, whole-market dumps that need ticker/name to be
+    useful at all).
+  - `GetLatestStockPrices` and `GetStockPricesByDate` each additionally
+    take an optional `global` bool (default `false`). Unlike
+    `ListInstruments`' `includeGlobal`, this *switches* the data source
+    rather than merging it — confirmed live global counterparts exist for
+    both (`instruments/stockprices/global/last`,
+    `instruments/stockprices/global/date`). These two are cached under the
+    much shorter `MarketDataCacheTtl` (1h) rather than `ReferenceDataCacheTtl`
     (7d) — merging Nordic + global by default like `ListInstruments` does
     would still double live API traffic and payload size (global
     responses run 1.35MB–4.57MB) at least once per that shorter window on
@@ -299,10 +557,19 @@ for why, if you're tempted to reintroduce it for this project.
     `global:true` also
     switches the ticker/name enrichment source to `GetGlobalInstrumentsAsync()`
     so results are enriched against the universe actually queried, not the
-    Nordic list. Confirmed live for all three, including the previously-
+    Nordic list. Confirmed live for both, including the previously-
     unverified `GetStockPricesByDate` non-trading-day case on the global
     endpoint (a Sunday date returns an empty result, same as the Nordic
-    endpoint).
+    endpoint). `GetKpiListScreener` originally had this same `global` bool
+    switch (global counterpart confirmed at `instruments/global/kpis/
+    {kpiId}/{calcGroup}/{calc}` — note `global` sits right after
+    `instruments/` there, not appended like the other two, matching
+    Börsdata's own URL layout) but design 7 in `GetKpiListScreener`'s own
+    bullet above split it into a separate `GetGlobalKpiListScreener` tool
+    instead, to mirror Börsdata's own two-separate-endpoints structure
+    directly — a deliberate inconsistency with these other two tools'
+    bool-switch approach, not an oversight; they weren't changed to match
+    since nothing prompted revisiting them.
   - Every other per-instrument tool (`GetStockPrices`, `GetKpiScreener`,
     `GetKpiHistory`, `GetKpiSummary`, `GetReports`, `GetReportCalendar`,
     `GetDividendCalendar`, `GetInsiderHoldings`, `GetBuybackHoldings`)
@@ -390,7 +657,29 @@ for why, if you're tempted to reintroduce it for this project.
     `quarter`/`mean` returns an HTTP 400 for kpiId 2 (P/E) even though
     `year`/`mean` and `r12`/`mean` both work — so this isn't validated
     against a hardcoded whitelist; an invalid combination's error just
-    propagates like it already does for other tools.
+    propagates like it already does for other tools — and, since
+    `Program.cs`'s `AddCallToolFilter` was added, that propagated
+    `HttpRequestException`'s message now actually reaches the calling
+    client instead of collapsing to a contentless generic error (see
+    `Program.cs`'s own bullet above). That message itself used to be just
+    .NET's bare `"Response status code does not indicate success: 400
+    (Bad Request)."` even after the filter fix — confirmed live this was
+    still not enough: a calling model that hit this exact `year`/`latest`-
+    for-kpiId-2 case thrashed across many unrelated fallback strategies
+    (individual per-instrument calls, shorter id lists, etc.) instead of
+    the one fix that actually mattered, switching `calcGroup`, because
+    knowing "it's a 400" without knowing *why* wasn't actionable.
+    `BorsdataApiClient.GetAsync` now reads and includes Börsdata's own
+    response body (bounded to 500 chars) in the thrown `HttpRequestException`'s
+    message instead of discarding it via a bare `EnsureSuccessStatusCode()`
+    — confirmed safe to include: the `path` string this method receives
+    never contains the `authKey` query parameter, since `AuthKeyHandler`
+    appends that later in the pipeline, after `GetAsync` has already built
+    its exception message. `GetKpiScreener`/`GetKpiListScreener`'s
+    `calcGroup` parameter `[Description]`s now also explicitly flag that
+    `'last'` is confirmed to work broadly and `'year'` does not for kpiId
+    2 — a concrete, checkable example rather than just "not every
+    combination works."
   - `GetStockPrices` (`GET instruments/{insId}/stockprices?from=...&to=...
     &maxCount=...`) found via a real user-visible failure: a large-history
     instrument (`instrumentId: 352`, no `from`/`to`) returned thousands of

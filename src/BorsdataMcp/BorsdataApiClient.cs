@@ -192,6 +192,60 @@ public sealed class BorsdataApiClient(HttpClient httpClient, IMemoryCache cache)
     public Task<JsonNode?> GetReportsAsync(int instrumentId, string reportType, CancellationToken ct = default) =>
         GetAsync($"instruments/{instrumentId}/reports/{reportType}", ct);
 
+    // GET instruments/{id}/reports (Börsdata operationId reportscompoundv1) — all three report
+    // types (year/quarter/r12) for one instrument in a single call, unlike GetReportsAsync which
+    // needs one call per reportType. Confirmed against Börsdata's own OpenAPI spec
+    // (apidoc.borsdata.se/swagger/v1/swagger.json): maxYearCount defaults 10/max 20,
+    // maxR12QCount defaults 10/max 40, original is a 0/1 flag ("Return original currency").
+    public Task<JsonNode?> GetReportsCompoundAsync(
+        int instrumentId, int? maxYearCount = null, int? maxR12QCount = null, bool? original = null, CancellationToken ct = default)
+    {
+        var query = BuildQuery(
+            ("maxYearCount", maxYearCount?.ToString()),
+            ("maxR12QCount", maxR12QCount?.ToString()),
+            ("original", original is null ? null : (original.Value ? "1" : "0")));
+        return GetAsync($"instruments/{instrumentId}/reports{query}", ct);
+    }
+
+    // GET instruments/reports (Börsdata operationId reportsarrayv1) — same report data as
+    // GetReportsCompoundAsync but for a list of instruments in one call. instList is required by
+    // Börsdata's own spec (confirmed), unlike GetReportCalendarAsync/GetDividendCalendarAsync where
+    // it's also required — consistent across this whole "array" family of endpoints.
+    public Task<JsonNode?> GetReportsArrayAsync(
+        string instrumentIds, int? maxYearCount = null, int? maxR12QCount = null, bool? original = null, CancellationToken ct = default)
+    {
+        var query = BuildQuery(
+            ("instList", instrumentIds),
+            ("maxYearCount", maxYearCount?.ToString()),
+            ("maxR12QCount", maxR12QCount?.ToString()),
+            ("original", original is null ? null : (original.Value ? "1" : "0")));
+        return GetAsync($"instruments/reports{query}", ct);
+    }
+
+    // GET instruments/kpis/{kpiId}/{reportType}/{priceType}/history (Börsdata operationId
+    // histarraykpisv1) — KPI history (a trend over time) for a LIST of instruments in one call,
+    // unlike GetKpiHistoryAsync which is one instrument at a time. Confirmed against Börsdata's own
+    // OpenAPI spec: this is a genuinely different endpoint from GetKpiListScreenerAsync despite the
+    // similar-looking "instruments/kpis/{kpiId}/..." path prefix — different tag ("Kpi History" vs
+    // "Kpi Screener"), different path params (reportType/priceType, not calcGroup/calc), and unlike
+    // GetKpiListScreenerAsync's endpoint, this one DOES accept instList server-side (confirmed
+    // required in the spec) — real server-side scoping, not a client-side filter we'd have to fake.
+    public Task<JsonNode?> GetKpiHistoryArrayAsync(
+        int kpiId, string reportType, string priceType, string instrumentIds, int? maxCount = null, CancellationToken ct = default)
+    {
+        var query = BuildQuery(("instList", instrumentIds), ("maxCount", maxCount?.ToString()));
+        return GetAsync($"instruments/kpis/{kpiId}/{reportType}/{priceType}/history{query}", ct);
+    }
+
+    // GET instruments/description (Börsdata operationId "Instrument Description") — Swedish/English
+    // company description text for a list of instruments. instList is required and capped at 50
+    // instruments per Börsdata's own spec (confirmed).
+    public Task<JsonNode?> GetInstrumentDescriptionsAsync(string instrumentIds, CancellationToken ct = default)
+    {
+        var query = BuildQuery(("instList", instrumentIds));
+        return GetAsync($"instruments/description{query}", ct);
+    }
+
     // Returns each instrument's full report-date history (past and scheduled future dates) —
     // confirmed live there's no server-side maxCount for this endpoint, unlike stockprices/kpi
     // history, so any capping has to happen client-side (see CalendarTools).
@@ -259,9 +313,24 @@ public sealed class BorsdataApiClient(HttpClient httpClient, IMemoryCache cache)
     private async Task<JsonNode?> GetAsync(string path, CancellationToken ct)
     {
         using var response = await httpClient.GetAsync(path, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            // EnsureSuccessStatusCode() alone discards the response body, so a Börsdata error
+            // explanation (e.g. why a calcGroup/calc combination is invalid for a given kpiId)
+            // never reached the caller — confirmed live this cost a real session several minutes
+            // of the calling model thrashing across unrelated fallback strategies after a bare
+            // "400 Bad Request" gave it nothing to act on. Bounded to keep the message readable.
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var detail = string.IsNullOrWhiteSpace(body) ? "" : $" Response body: {Truncate(body, 500)}";
+            throw new HttpRequestException(
+                $"Börsdata API request to '{path}' failed with {(int)response.StatusCode} {response.ReasonPhrase}.{detail}");
+        }
+
         return await response.Content.ReadFromJsonAsync<JsonNode>(cancellationToken: ct);
     }
+
+    private static string Truncate(string value, int maxLength) =>
+        value.Length <= maxLength ? value : value[..maxLength] + "...";
 
     private static string BuildQuery(params (string Key, string? Value)[] parameters)
     {
