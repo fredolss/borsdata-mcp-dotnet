@@ -20,6 +20,6 @@ internal static partial class CatalogSearch
             .Select(match => match.Value)
             .ToArray();
 
-    [GeneratedRegex(@"[\p{L}\p{N}]+", RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"[\p{L}]+|[\p{N}]+", RegexOptions.CultureInvariant)]
     private static partial Regex TermPattern();
 }
