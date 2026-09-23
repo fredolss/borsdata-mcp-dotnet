@@ -128,6 +128,25 @@ dotnet build
 dotnet test
 ```
 
+`tests/BorsdataMcp.Tests` are fast, in-process unit tests. `tests/BorsdataMcp.IntegrationTests`
+spawn the real server as a subprocess and connect to it over stdio with a real MCP client, with
+its Börsdata calls redirected (via the `Borsdata__BaseUrl` env var) to a local fake HTTP server —
+no real Börsdata API key or network access is needed. They verify: the server starts and completes
+the MCP `initialize` handshake; `tools/list` succeeds and returns the expected tools with valid
+input schemas; a representative tool call succeeds against canned fixture data; invalid input
+produces a real, useful error message (not a generic collapse); the server process exits cleanly
+when stdin closes; and stdout never carries anything but valid JSON-RPC frames (a stray log line
+there would corrupt the protocol stream for every real MCP client). Run just these with:
+
+```bash
+dotnet test tests/BorsdataMcp.IntegrationTests
+```
+
+CI runs both projects on `ubuntu-latest`, `windows-latest`, and `macos-latest`. **Limitations**:
+these tests check MCP protocol mechanics against canned fixture data only — they don't exercise
+real Börsdata API behavior or data, and no actual LLM's tool-selection or reasoning is in the
+loop, unlike using the server through a real AI client.
+
 ## Using with Claude Desktop
 
 Two Claude-specific ways to register this server, on top of the generic
@@ -201,6 +220,8 @@ prompted (collected by the install UI, not read from `.env`).
   `Tools/` contains the `[McpServerTool]`-attributed methods exposed to
   clients.
 - `tests/BorsdataMcp.Tests` — unit tests.
+- `tests/BorsdataMcp.IntegrationTests` — subprocess-level MCP protocol tests: a real MCP client,
+  a real server process, and a fake Börsdata HTTP backend.
 - `mcpb/` — packages the server as a Claude Desktop Extension; see above.
 
 ## Contributing

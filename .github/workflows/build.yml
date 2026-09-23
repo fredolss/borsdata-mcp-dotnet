@@ -9,8 +9,17 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Runs on all three OSes: BorsdataMcp.Tests are fast in-process unit tests, while
+  # BorsdataMcp.IntegrationTests spawn the real server as a subprocess over stdio (against a local
+  # fake Börsdata HTTP server, so no real API key or network access is needed) — the integration
+  # suite is what actually needs the OS matrix, and running the unit tests alongside it here avoids
+  # a second, duplicated build+test job.
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,6 +75,16 @@ jobs:
           (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-linux-x64.mcpb"
           cp "$RUNNER_TEMP/manifest.base.json" mcpb/manifest.json
+
+      # Secondary smoke test on top of the `test` job's matrix above: proves the actual
+      # self-contained native binary (a different launch path from `dotnet <dll>`, the only one
+      # the `test` job's integration suite otherwise exercises) starts and speaks MCP correctly.
+      # win-x64's binary isn't smoke-tested here since this job runs on ubuntu-latest, which can't
+      # execute it; there's no separate win-x64 runner job to hang this off of.
+      - name: Smoke-test the published linux-x64 binary
+        run: dotnet test tests/BorsdataMcp.IntegrationTests --filter FullyQualifiedName~McpProtocolTests
+        env:
+          BORSDATA_MCP_TEST_EXECUTABLE: ${{ github.workspace }}/mcpb/server/app/BorsdataMcp
 
       - name: Build and pack the self-contained win-x64 package
         run: |
@@ -141,6 +160,12 @@ jobs:
           chmod +x mcpb/server/app/BorsdataMcp
           (cd mcpb && npx --yes @anthropic-ai/mcpb pack < /dev/null)
           mv mcpb/mcpb.mcpb "mcpb/borsdata-mcp-${{ env.sha }}-osx-universal.mcpb"
+
+      # See the linux-x64 smoke test in `package` above for why this exists.
+      - name: Smoke-test the published osx-universal binary
+        run: dotnet test tests/BorsdataMcp.IntegrationTests --filter FullyQualifiedName~McpProtocolTests
+        env:
+          BORSDATA_MCP_TEST_EXECUTABLE: ${{ github.workspace }}/mcpb/server/app/BorsdataMcp
 
       - uses: actions/upload-artifact@v4
         with:
