@@ -118,17 +118,19 @@ for why, if you're tempted to reintroduce it for this project.
     handler instances sharing one `RateLimitState`).
 - `BorsdataApiClient` is a thin wrapper: each method hits one Börsdata
   endpoint and returns the raw `JsonNode` response. Responses are **not**
-  deserialized into strongly-typed DTOs — this is deliberate, since the
+  generally deserialized into strongly-typed DTOs — this is deliberate, since the
   exact Börsdata response schema per endpoint hasn't been verified against
   live data yet. Tool methods serialize the `JsonNode` straight back out as
   a JSON string. If/when DTOs are introduced, verify field names against
   real API responses first (Börsdata's JSON casing/shape is not something
-  to assume from memory).
+  to assume from memory). The intentional exception is the two paginated
+  bulk-price tools, whose verified `StockPriceFullV1`/`StockPriceDateV1`
+  fields are mapped to `StockPriceResult` to advertise an MCP output schema.
   - Confirmed against live data: the 5 reference-data endpoints
     (`instruments`, `markets`, `branches`, `sectors`, `countries`) each
     wrap their array in an envelope object keyed by the endpoint name —
     e.g. `{ "instruments": [ ... ] }`, **not** a bare JSON array. A first
-    pass at `ListInstruments`' filtering assumed a bare array and silently
+    pass at `SearchInstruments`' filtering assumed a bare array and silently
     matched zero instruments against the live API despite passing unit
     tests built on an (also wrong) bare-array fixture — a reminder that
     the "not verified against live data" caveat above is not theoretical.
@@ -156,7 +158,7 @@ for why, if you're tempted to reintroduce it for this project.
     never blocks cache hits) prevents concurrent tool calls from both
     fetching on a cold cache — `IMemoryCache.GetOrCreateAsync` alone does
     *not* serialize concurrent misses on the same key, confirmed by two
-    parallel `ListInstruments` calls both hitting the live API before this
+    parallel `SearchInstruments` calls both hitting the live API before this
     was added. That lock **must be `static`**, not an instance field:
     `BorsdataApiClient` itself is registered transient (`AddHttpClient<TClient>()`
     gives every DI resolution a new `TClient` instance, even though the
@@ -170,56 +172,41 @@ for why, if you're tempted to reintroduce it for this project.
     `RateLimitHandler`'s original, broken approach — does not, once that
     class is also an `IHttpClientFactory` message handler.
     The cache always holds the **unfiltered** response for a given
-    endpoint; per-call filtering (see `ListInstruments` below) happens
+    endpoint; per-call filtering (see `SearchInstruments` below) happens
     downstream of the cache on every call, so it can never itself become
     stale/narrowed by a previous filtered call. The same cached `JsonNode`
     instance is handed to every caller — safe as long as nothing mutates
     it in place (`array.Add(...)`, `obj["x"] = ...`); `JsonNode.Parent`
     being single-parent-only means the runtime already throws if you try
     to insert a live child of the cached tree into another `JsonArray`
-    without `.DeepClone()` first, which is exactly what `ListInstruments`'
+    without `.DeepClone()` first, which is exactly what `SearchInstruments`'
     filtering does.
-  - `ListInstruments` takes optional `search` (substring match against
-    name/ticker/isin)/`marketId`/`countryId`/`sectorId`/`branchId`/
-    `maxCount` filters and returns `{ totalMatched, returned, instruments }`
-    rather than a bare array, so a caller can tell when more instruments
-    matched than were returned. This exists because the endpoint covers
-    several thousand instruments — calling it with zero filters previously
-    dumped everything in one response, large enough that at least one MCP
-    client failed to render it ("This response didn't load"). `maxCount`
-    is nullable/uncapped by default (not a low hard default) so "give me
-    everything" remains possible.
-  - `ListInstruments` also takes an optional `includeGlobal` bool (default
-    `false`, preserving the exact pre-existing Nordic-only output —
-    including omitting the `isGlobal` field entirely, not just defaulting
-    it to `false`, so existing callers see byte-identical responses). When
-    `true`, results are merged with Börsdata's global (non-Nordic, Pro+)
-    instrument universe (`GET instruments/global`, confirmed live: 16,129
-    entries, 4.57MB — over 30x the Nordic list's ~1,700/145KB), each
-    result tagged `isGlobal: true`/`false` so a caller can tell which
-    universe an instrument came from. Cached the same way as the Nordic
-    list (its own `ReferenceDataCacheTtl`-TTL cache key,
-    `"instruments/global"`), so repeated `includeGlobal: true` calls cost
-    one extra live fetch per TTL window, not one per call. `insId` is
-    assumed unique across both universes
-    (confirmed live: global insIds start at 10054+, well above the Nordic
-    range) so no de-duplication happens. A bool rather than a Go-style
-    `scope: "nordic"|"global"` string: this project prefers a typed
-    parameter over a stringly-typed enum-like value where the underlying
-    concept really is binary, and merging by default (rather than
-    switching, like the three bulk tools below) is affordable specifically
-    *because* this path is cached — unlike them.
+  - `SearchInstruments` takes optional `search` (substring match against
+    name/ticker/isin), metadata filters, `universe`, sorting, and `pageSize`.
+    It returns `{ totalMatched, returned, instruments, nextCursor? }`; later
+    pages are requested with `cursor` alone from a 15-minute snapshot.
+    Unfiltered calls are supported but always bounded by the default page
+    size of 50 (maximum 200), avoiding the former multi-thousand-entry dump.
+  - `SearchInstruments.universe` accepts `nordic` (default), `global`, or
+    `all`. Only the selected Börsdata population is fetched; `all` fetches
+    and combines both cached endpoints and tags results with
+    `isGlobal: true`/`false`. `insId` is assumed unique across universes
+    (confirmed live: global insIds start at 10054+, above the Nordic range).
+    Results are sorted case-insensitively by ticker (default) or name with
+    ascending `insId` as the deterministic tie-breaker before pagination.
   - `GetLatestStockPrices` (`GET instruments/stockprices/last`) and
     `GetStockPricesByDate` (`GET instruments/stockprices/date?date=...`)
     return every instrument's price in one call (~1,700 entries live,
-    ~145KB — same oversized-response shape as `ListInstruments`/
+    ~145KB — the same oversized upstream response shape handled by `SearchInstruments`/
     `GetKpiListScreener`/`GetShortHoldings`). Confirmed live: neither
     endpoint accepts `instList` server-side (passing one had no effect,
     every instrument still came back), so both tools filter by
     `instrumentIds` and enrich with `ticker`/`name` client-side via the
-    shared `InstrumentLookup` helper — the same `BuildStockPricesResult`
-    helper backs both tools, since they differ only in which endpoint they
-    call. Also confirmed live: a weekend/holiday `date` returns an empty
+    shared `InstrumentLookup` helper — the same `BuildStockPriceResults`
+    helper backs both tools. Results are sorted by ticker/name and served
+    from a 15-minute `CursorPaginationService` snapshot in pages of 50 by
+    default (maximum 200), so later pages do not re-fetch or reprocess the
+    upstream response. Also confirmed live: a weekend/holiday `date` returns an empty
     `stockPricesList` (HTTP 200) rather than an error, so
     `GetStockPricesByDate` doesn't need special-case handling for
     non-trading days. Both are cached via `MarketDataCacheTtl` (1 hour,
@@ -271,7 +258,7 @@ for why, if you're tempted to reintroduce it for this project.
        `instrumentIds` list. Three progressively more explicit wording
        rounds (v1: "prefer instrumentIds to keep the response small" — this
        backfired, see the `minValue`/`maxValue` note below; v2: an explicit
-       "STEP 1/STEP 2" instruction to always chain `ListInstruments` →
+       "STEP 1/STEP 2" instruction to always chain `SearchInstruments` →
        `instrumentIds`; v3: "ONE call is enough" moved to the very first
        sentence) all failed to reliably stop a real Claude Desktop session
        from calling this tool without `instrumentIds` it had already
@@ -313,13 +300,13 @@ for why, if you're tempted to reintroduce it for this project.
        explicit `string.IsNullOrWhiteSpace` check that threw `McpException`
        (whose `.Message` *does* get forwarded) fixed that specific failure
        — confirmed live afterward: a market-scoped query flowed correctly
-       in one shot (`list_markets` → `list_instruments(marketId)` →
+       in one shot (`list_markets` → `search_instruments(marketId)` →
        `get_kpi_list_screener(instrumentIds)`, no wasted unscoped call).
     3. *Still two tools; the model reliably used `instrumentIds` over
        `marketId` even after design 2's fix landed.* With the missing-
        parameter case now fixed, live testing surfaced a different,
        narrower problem: a session that had already resolved a market's
-       full `instrumentIds` list via `ListInstruments` kept passing that
+       full `instrumentIds` list via `SearchInstruments` kept passing that
        list to `GetKpiListScreener` instead of switching to
        `GetKpiListScreenerAllInstruments` with the cheaper `marketId`
        filter — even after both tools' `[Description]`s were rewritten
@@ -361,9 +348,9 @@ for why, if you're tempted to reintroduce it for this project.
        `instrumentIds` cost the same), taken one step further: if there's
        no cost reason to prefer one over the other, there's also no reason
        to *maintain two parallel filtering mechanisms* on this one tool —
-       `ListInstruments` already resolves `marketId`/`countryId`/`sectorId`/
+       `SearchInstruments` already resolves `marketId`/`countryId`/`sectorId`/
        `branchId` into insIds perfectly well, confirmed working live as a
-       two-call chain (`ListInstruments(marketId)` → `GetKpiListScreener(
+       two-call chain (`SearchInstruments(marketId)` → `GetKpiListScreener(
        instrumentIds)`), so duplicating that resolution logic here via
        `InstrumentLookup.FilterIdsByAttributes` was pure surface area for
        no benefit. `FilterIdsByAttributes` and its private `GetInt` helper
@@ -375,7 +362,7 @@ for why, if you're tempted to reintroduce it for this project.
        explicit `if (instrumentIds is null || instrumentIds.Length == 0)`
        check at the top of the method body throwing `McpException` is what
        actually gets a useful message through. That message now points the
-       caller at `ListInstruments` rather than a sibling tool — there still
+       caller at `SearchInstruments` rather than a sibling tool — there still
        isn't one, and now there's also no second filter mechanism on this
        tool to redirect to.
     6. *`instrumentIds` is gone too — `GetKpiListScreener`
@@ -441,7 +428,7 @@ for why, if you're tempted to reintroduce it for this project.
          correct. Removing `maxCount` specifically would have resurrected
          a real, already-fixed bug: an unbounded ~14,000-entry dump that
          once broke at least one MCP client's rendering (see
-         `ListInstruments` above).
+         `SearchInstruments` above).
        - `minValue`/`maxValue` were removed, on explicit instruction,
          despite this session initially pushing back that they're not
          analogous to `instrumentIds` either: Börsdata's API has no
@@ -483,7 +470,7 @@ for why, if you're tempted to reintroduce it for this project.
        them would just be redundant surface, not a live tool preserved
        here — same instinct as removing the parameters). This does bring
        back, deliberately and knowingly, the exact "unbounded ~14,000-
-       entry response" risk flagged in design 7 (see the `ListInstruments`
+       entry response" risk flagged in design 7 (see the `SearchInstruments`
        precedent above) — no mitigation was added for it, since none was
        asked for; if this becomes a real problem again, that's the fix to
        revisit, not a reason to silently re-add `maxCount`.
@@ -543,12 +530,12 @@ for why, if you're tempted to reintroduce it for this project.
     useful at all).
   - `GetLatestStockPrices` and `GetStockPricesByDate` each additionally
     take an optional `global` bool (default `false`). Unlike
-    `ListInstruments`' `includeGlobal`, this *switches* the data source
+    `SearchInstruments`' `universe`, this is a boolean switch between data sources
     rather than merging it — confirmed live global counterparts exist for
     both (`instruments/stockprices/global/last`,
     `instruments/stockprices/global/date`). These two are cached under the
     much shorter `MarketDataCacheTtl` (1h) rather than `ReferenceDataCacheTtl`
-    (7d) — merging Nordic + global by default like `ListInstruments` does
+    (7d) — requesting both Nordic + global like `SearchInstruments(universe:"all")` does
     would still double live API traffic and payload size (global
     responses run 1.35MB–4.57MB) at least once per that shorter window on
     every call path regardless of whether a caller wanted global data —
@@ -890,7 +877,7 @@ for why, if you're tempted to reintroduce it for this project.
   artifact), `release` stamps the tag's version.
   - `display_name` is `"Borsdata"` (plain ASCII, no "ö") as of 2026-09-14.
     A one-off failure in a Claude chat surface (`Tool
-    'Börsdata:list_instruments' not found`, a literal escaped-unicode
+    'Börsdata:search_instruments' not found`, a literal escaped-unicode
     string apparently never decoded back before being used as a lookup
     key) briefly looked like the "ö" itself broke tool-name resolution
     there, and this session's own tool listing showing two differently-
@@ -906,7 +893,7 @@ for why, if you're tempted to reintroduce it for this project.
     **That call didn't hold up**: the identical `Tool 'Börsdata:...'
     not found` failure recurred later (2026-09-14, reported by the user
     with a screenshot from a separate Claude chat surface, against the
-    then-latest `main`), on a fresh `list_instruments` call this time —
+    then-latest `main`), on a fresh `search_instruments` call this time —
     not a coincidental repeat of the earlier query. This session couldn't
     drive that chat surface to live-retest the same way the original
     investigation did, but it independently reproduced the *other* half of

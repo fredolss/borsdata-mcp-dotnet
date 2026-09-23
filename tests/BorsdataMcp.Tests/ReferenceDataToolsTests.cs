@@ -3,6 +3,8 @@ using System.Text;
 using System.Text.Json.Nodes;
 using BorsdataMcp.Tools;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Server;
 
 namespace BorsdataMcp.Tests;
 
@@ -92,6 +94,7 @@ public class ReferenceDataToolsTests
         private int callCount;
         public int CallCount => callCount;
         public Uri? LastRequestUri { get; private set; }
+        public List<Uri> RequestUris { get; } = [];
 
         public StubHandler(TimeSpan delay = default) => this.delay = delay;
 
@@ -99,6 +102,7 @@ public class ReferenceDataToolsTests
         {
             Interlocked.Increment(ref callCount);
             LastRequestUri = request.RequestUri;
+            RequestUris.Add(request.RequestUri!);
             if (delay > TimeSpan.Zero)
                 await Task.Delay(delay, cancellationToken);
             var path = request.RequestUri!.AbsolutePath;
@@ -125,12 +129,19 @@ public class ReferenceDataToolsTests
         return new BorsdataApiClient(httpClient, new MemoryCache(new MemoryCacheOptions()));
     }
 
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; private set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+        public void Advance(TimeSpan duration) => Now = Now.Add(duration);
+    }
+
     [Fact]
-    public async Task ListInstruments_NoFilters_ReturnsEverything()
+    public async Task SearchInstruments_NoFilters_ReturnsFirstSortedPage()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination()))!;
 
         Assert.Equal(6, result["totalMatched"]!.GetValue<int>());
         Assert.Equal(6, result["returned"]!.GetValue<int>());
@@ -138,11 +149,11 @@ public class ReferenceDataToolsTests
     }
 
     [Fact]
-    public async Task ListInstruments_SearchMatchesNameCaseInsensitively()
+    public async Task SearchInstruments_SearchMatchesNameCaseInsensitively()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, search: "volvo"))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), search: "volvo"))!;
 
         Assert.Equal(2, result["totalMatched"]!.GetValue<int>());
         var names = result["instruments"]!.AsArray().Select(i => i!["name"]!.GetValue<string>()).ToList();
@@ -151,44 +162,44 @@ public class ReferenceDataToolsTests
     }
 
     [Fact]
-    public async Task ListInstruments_SearchMatchesTicker()
+    public async Task SearchInstruments_SearchMatchesTicker()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, search: "ERIC"))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), search: "ERIC"))!;
 
         Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
         Assert.Equal("Ericsson B", result["instruments"]![0]!["name"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task ListInstruments_SearchMatchesIsin()
+    public async Task SearchInstruments_SearchMatchesIsin()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, search: "FI4000297767"))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), search: "FI4000297767"))!;
 
         Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
         Assert.Equal("Nordea Bank", result["instruments"]![0]!["name"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task ListInstruments_MarketIdIsolatesExpectedSubset()
+    public async Task SearchInstruments_MarketIdIsolatesExpectedSubset()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, marketId: 2))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), marketId: 2))!;
 
         Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
         Assert.Equal("Nordea Bank", result["instruments"]![0]!["name"]!.GetValue<string>());
     }
 
     [Fact]
-    public async Task ListInstruments_CombinesFiltersWithAnd()
+    public async Task SearchInstruments_CombinesFiltersWithAnd()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, marketId: 1, sectorId: 1))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), marketId: 1, sectorId: 1))!;
 
         Assert.Equal(3, result["totalMatched"]!.GetValue<int>());
         var names = result["instruments"]!.AsArray().Select(i => i!["name"]!.GetValue<string>()).ToList();
@@ -197,12 +208,32 @@ public class ReferenceDataToolsTests
         Assert.Contains("Atlas Copco A", names);
     }
 
+    [Theory]
+    [InlineData("country", 2, 4)]
+    [InlineData("sector", 2, 3)]
+    [InlineData("branch", 4, 5)]
+    public async Task SearchInstruments_MetadataFiltersWorkIndividually(string filter, int value, int expectedId)
+    {
+        var client = CreateClient(out _);
+        var pagination = TestServices.CreatePagination();
+        var json = filter switch
+        {
+            "country" => await ReferenceDataTools.SearchInstruments(client, pagination, countryId: value),
+            "sector" => await ReferenceDataTools.SearchInstruments(client, pagination, sectorId: value),
+            _ => await ReferenceDataTools.SearchInstruments(client, pagination, branchId: value)
+        };
+
+        var result = JsonNode.Parse(json)!;
+        Assert.Equal(expectedId, result["instruments"]![0]!["insId"]!.GetValue<int>());
+    }
+
     [Fact]
-    public async Task ListInstruments_MaxCountCapsReturned_ButNotTotalMatched()
+    public async Task SearchInstruments_PageSizeCapsReturned_ButNotTotalMatched()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, marketId: 1, sectorId: 1, maxCount: 2))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(
+            client, TestServices.CreatePagination(), marketId: 1, sectorId: 1, pageSize: 2))!;
 
         Assert.Equal(3, result["totalMatched"]!.GetValue<int>());
         Assert.Equal(2, result["returned"]!.GetValue<int>());
@@ -210,31 +241,142 @@ public class ReferenceDataToolsTests
     }
 
     [Fact]
-    public async Task ListInstruments_OmittingMaxCount_ReturnsAllMatches_EvenWhenManyMatch()
+    public async Task SearchInstruments_DefaultPageReturnsAllSmallFixtureMatches()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination()))!;
 
         Assert.Equal(6, result["returned"]!.GetValue<int>());
     }
 
     [Fact]
-    public async Task ListInstruments_Caches_AcrossDifferentFilters_AndAlwaysSeesFullList()
+    public async Task SearchInstruments_SortsByTickerByDefaultAndNameDescendingWhenRequested()
+    {
+        var client = CreateClient(out _);
+
+        var tickerResult = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(
+            client, TestServices.CreatePagination()))!;
+        var nameResult = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(
+            client, TestServices.CreatePagination(), sortBy: "name", sortDirection: "desc"))!;
+
+        Assert.Equal(
+            ["ATCO A", "ERIC B", "INVE B", "NDA SE", "VOLV A", "VOLV B"],
+            tickerResult["instruments"]!.AsArray().Select(i => i!["ticker"]!.GetValue<string>()));
+        Assert.Equal(
+            ["Volvo B", "Volvo A", "Nordea Bank", "Investor B", "Ericsson B", "Atlas Copco A"],
+            nameResult["instruments"]!.AsArray().Select(i => i!["name"]!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task SearchInstruments_PaginatesUnfilteredSnapshotWithoutDuplicatesOrRefetch()
+    {
+        var client = CreateClient(out var stub);
+        var pagination = TestServices.CreatePagination();
+        var page = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, pagination, pageSize: 2))!;
+        var ids = new List<int>();
+
+        while (true)
+        {
+            ids.AddRange(page["instruments"]!.AsArray().Select(i => i!["insId"]!.GetValue<int>()));
+            var cursor = page["nextCursor"]?.GetValue<string>();
+            if (cursor is null)
+                break;
+            page = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, pagination, cursor: cursor))!;
+        }
+
+        Assert.Equal([6, 3, 5, 4, 2, 1], ids);
+        Assert.Equal(ids.Count, ids.Distinct().Count());
+        Assert.Equal(1, stub.CallCount);
+    }
+
+    [Fact]
+    public async Task SearchInstruments_CursorPreservesFiltersAndMustBeUsedAlone()
+    {
+        var client = CreateClient(out _);
+        var pagination = TestServices.CreatePagination();
+        var first = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(
+            client, pagination, search: "Volvo", sortBy: "name", sortDirection: "desc", pageSize: 1))!;
+        var cursor = first["nextCursor"]!.GetValue<string>();
+
+        var second = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, pagination, cursor: cursor))!;
+        var combined = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ReferenceDataTools.SearchInstruments(client, pagination, cursor: cursor, universe: "nordic"));
+
+        Assert.Equal("Volvo B", first["instruments"]![0]!["name"]!.GetValue<string>());
+        Assert.Equal("Volvo A", second["instruments"]![0]!["name"]!.GetValue<string>());
+        Assert.Null(second["nextCursor"]);
+        Assert.StartsWith("INVALID_REQUEST:", combined.Message);
+    }
+
+    [Fact]
+    public async Task SearchInstruments_RejectsInvalidExpiredAndOutOfRangePaging()
+    {
+        var client = CreateClient(out _);
+        var time = new MutableTimeProvider(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var pagination = TestServices.CreatePagination(timeProvider: time);
+        var first = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, pagination, pageSize: 1))!;
+        var cursor = first["nextCursor"]!.GetValue<string>();
+
+        var unknown = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ReferenceDataTools.SearchInstruments(client, pagination, cursor: "unknown"));
+        var invalidPage = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ReferenceDataTools.SearchInstruments(client, pagination, pageSize: 201));
+        time.Advance(TimeSpan.FromMinutes(16));
+        var expired = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ReferenceDataTools.SearchInstruments(client, pagination, cursor: cursor));
+
+        Assert.StartsWith("CURSOR_EXPIRED:", unknown.Message);
+        Assert.StartsWith("INVALID_REQUEST:", invalidPage.Message);
+        Assert.StartsWith("CURSOR_EXPIRED:", expired.Message);
+    }
+
+    [Fact]
+    public void SearchInstruments_ExposesOnlyTheNewPublicContract()
+    {
+        var methods = typeof(ReferenceDataTools).GetMethods()
+            .Where(method => method.GetCustomAttributes(typeof(McpServerToolAttribute), false).Length > 0);
+        Assert.DoesNotContain(methods, method => method.Name == "ListInstruments");
+
+        var client = CreateClient(out _);
+        var pagination = TestServices.CreatePagination();
+        using var services = new ServiceCollection()
+            .AddSingleton(client)
+            .AddSingleton(pagination)
+            .BuildServiceProvider();
+        var method = typeof(ReferenceDataTools).GetMethod(nameof(ReferenceDataTools.SearchInstruments))!;
+        var tool = McpServerTool.Create(
+            method, target: null, options: new McpServerToolCreateOptions { Services = services });
+        var properties = JsonNode.Parse(tool.ProtocolTool.InputSchema.GetRawText())!["properties"]!;
+
+        Assert.Equal("search_instruments", tool.ProtocolTool.Name);
+        Assert.NotNull(properties["cursor"]);
+        Assert.NotNull(properties["universe"]);
+        Assert.NotNull(properties["sortBy"]);
+        Assert.NotNull(properties["sortDirection"]);
+        Assert.NotNull(properties["pageSize"]);
+        Assert.Null(properties["client"]);
+        Assert.Null(properties["pagination"]);
+        Assert.Null(properties["includeGlobal"]);
+        Assert.Null(properties["maxCount"]);
+    }
+
+    [Fact]
+    public async Task SearchInstruments_Caches_AcrossDifferentFilters_AndAlwaysSeesFullList()
     {
         var client = CreateClient(out var stub);
 
-        var filtered = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, search: "volvo"))!;
+        var filtered = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), search: "volvo"))!;
         Assert.Equal(2, filtered["totalMatched"]!.GetValue<int>());
 
-        var unfiltered = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client))!;
+        var unfiltered = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination()))!;
 
         Assert.Equal(6, unfiltered["totalMatched"]!.GetValue<int>());
         Assert.Equal(1, stub.CallCount);
     }
 
     [Fact]
-    public async Task ListInstruments_ConcurrentColdCalls_OnlyFetchOnce()
+    public async Task SearchInstruments_ConcurrentColdCalls_OnlyFetchOnce()
     {
         // Regression test: IMemoryCache.GetOrCreateAsync does not serialize concurrent misses on the
         // same key, so two tool calls racing on a cold cache would otherwise both hit the live API.
@@ -248,8 +390,8 @@ public class ReferenceDataToolsTests
         var clientForCall1 = new BorsdataApiClient(httpClient, cache);
         var clientForCall2 = new BorsdataApiClient(httpClient, cache);
 
-        var first = ReferenceDataTools.ListInstruments(clientForCall1, search: "volvo");
-        var second = ReferenceDataTools.ListInstruments(clientForCall2, search: "hacksaw");
+        var first = ReferenceDataTools.SearchInstruments(clientForCall1, TestServices.CreatePagination(), search: "volvo");
+        var second = ReferenceDataTools.SearchInstruments(clientForCall2, TestServices.CreatePagination(), search: "hacksaw");
         await Task.WhenAll(first, second);
 
         Assert.Equal(1, stub.CallCount);
@@ -467,56 +609,84 @@ public class ReferenceDataToolsTests
     }
 
     [Fact]
-    public async Task ListInstruments_IncludeGlobalFalse_NoIsGlobalField_AndNeverFetchesGlobalList()
+    public async Task SearchInstruments_Nordic_NoIsGlobalField_AndNeverFetchesGlobalList()
     {
         var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination()))!;
 
         Assert.Equal(6, result["totalMatched"]!.GetValue<int>());
         foreach (var instrument in result["instruments"]!.AsArray())
             Assert.Null(instrument!["isGlobal"]);
 
-        // Only the Nordic instruments endpoint should have been hit — proves the includeGlobal ?
-        // ... : null short-circuit actually skips the second fetch, not just skips merging after
-        // fetching both.
+        // The default Nordic universe must not fetch the global population.
         Assert.Equal(1, stub.CallCount);
     }
 
     [Fact]
-    public async Task ListInstruments_IncludeGlobalTrue_MergesBothUniverses_AndTagsCorrectly()
+    public async Task SearchInstruments_Global_OnlyFetchesGlobalPopulationWithoutTag()
     {
-        var client = CreateClient(out _);
+        var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, includeGlobal: true))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(
+            client, TestServices.CreatePagination(), universe: "global"))!;
+
+        Assert.Equal(2, result["totalMatched"]!.GetValue<int>());
+        Assert.All(result["instruments"]!.AsArray(), item => Assert.Null(item!["isGlobal"]));
+        Assert.Single(stub.RequestUris);
+        Assert.Equal("/v1/instruments/global", stub.RequestUris[0].AbsolutePath);
+    }
+
+    [Fact]
+    public async Task SearchInstruments_InvalidUniverseIsRejectedBeforeFetching()
+    {
+        var client = CreateClient(out var stub);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ReferenceDataTools.SearchInstruments(
+                client, TestServices.CreatePagination(), universe: "international"));
+
+        Assert.StartsWith("INVALID_REQUEST:", error.Message);
+        Assert.Equal(0, stub.CallCount);
+    }
+
+    [Fact]
+    public async Task SearchInstruments_All_MergesBothUniverses_AndTagsCorrectly()
+    {
+        var client = CreateClient(out var stub);
+
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), universe: "all"))!;
 
         Assert.Equal(8, result["totalMatched"]!.GetValue<int>());
         var volvo = result["instruments"]!.AsArray().Single(i => i!["insId"]!.GetValue<int>() == 1)!;
         Assert.False(volvo["isGlobal"]!.GetValue<bool>());
         var globalCo = result["instruments"]!.AsArray().Single(i => i!["insId"]!.GetValue<int>() == 10054)!;
         Assert.True(globalCo["isGlobal"]!.GetValue<bool>());
+        Assert.Contains(stub.RequestUris, uri => uri.AbsolutePath == "/v1/instruments");
+        Assert.Contains(stub.RequestUris, uri => uri.AbsolutePath == "/v1/instruments/global");
     }
 
     [Fact]
-    public async Task ListInstruments_IncludeGlobalTrue_SearchMatchesAcrossBothUniverses()
+    public async Task SearchInstruments_All_SearchMatchesAcrossBothUniverses()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await ReferenceDataTools.ListInstruments(client, search: "Nexus", includeGlobal: true))!;
+        var result = JsonNode.Parse(await ReferenceDataTools.SearchInstruments(
+            client, TestServices.CreatePagination(), search: "Nexus", universe: "all"))!;
 
         Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
         Assert.Equal(10054, result["instruments"]![0]!["insId"]!.GetValue<int>());
     }
 
     [Fact]
-    public async Task ListInstruments_IncludeGlobalTrue_CachesGlobalListSeparately()
+    public async Task SearchInstruments_All_CachesGlobalListSeparately()
     {
         var client = CreateClient(out var stub);
 
-        await ReferenceDataTools.ListInstruments(client, includeGlobal: true);
-        await ReferenceDataTools.ListInstruments(client, includeGlobal: true);
+        await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), universe: "all");
+        await ReferenceDataTools.SearchInstruments(client, TestServices.CreatePagination(), universe: "all");
 
-        // 1 Nordic fetch + 1 global fetch, both cached — a second includeGlobal:true call adds 0 more.
+        // 1 Nordic fetch + 1 global fetch, both cached — a second universe:"all" call adds 0 more.
         Assert.Equal(2, stub.CallCount);
     }
 }

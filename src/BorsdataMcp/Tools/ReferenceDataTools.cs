@@ -7,19 +7,21 @@ namespace BorsdataMcp.Tools;
 [McpServerToolType]
 public static class ReferenceDataTools
 {
+    private const string SearchInstrumentsCursorOwner = "search_instruments";
+
     [McpServerTool, Description(
-        "Lists instruments (stocks/funds) on Börsdata with IDs, names, tickers, ISINs, and " +
-        "references to market/sector/branch/country. The returned insId is used by other tools. " +
-        "Prefer search and/or the id filters to narrow results — calling this with no filters " +
-        "returns every instrument on Börsdata (several thousand) in one response. Use maxCount " +
-        "to cap the number returned; the response's totalMatched field tells you whether more " +
-        "instruments matched than were returned. By default this only searches Börsdata's Nordic " +
-        "instrument list — a search for a non-Nordic company/ticker (e.g. a US, Canadian, or other " +
-        "international listing) will come back with totalMatched: 0 even though Börsdata covers it. " +
-        "If a search returns no match, retry the same search with includeGlobal: true before " +
-        "concluding the instrument isn't on Börsdata.")]
-    public static async Task<string> ListInstruments(
+        "Searches Börsdata instruments by name, ticker, or ISIN and returns the insId used by other " +
+        "tools. Optional market, country, sector, and branch filters can narrow the result. Choose " +
+        "the Nordic, global (non-Nordic, Pro+), or combined universe. Results are sorted by ticker " +
+        "or name and returned in cursor-paginated pages. On the first call, send any search/filter, " +
+        "universe, sorting, and pageSize settings. If nextCursor is returned, fetch another page " +
+        "with a new call containing only that cursor. Use filters when looking for specific " +
+        "instruments and only fetch additional pages when needed to answer the user's question.")]
+    public static async Task<string> SearchInstruments(
         BorsdataApiClient client,
+        CursorPaginationService pagination,
+        [Description("Opaque continuation token returned as nextCursor by a previous search_instruments call. When supplied, omit every other parameter.")]
+        string? cursor = null,
         [Description("Case-insensitive substring match against the instrument's name, ticker, or ISIN. Optional.")]
         string? search = null,
         [Description("Filter to instruments on this market id, from list_markets. Optional. For KPI-based " +
@@ -31,24 +33,48 @@ public static class ReferenceDataTools
         int? sectorId = null,
         [Description("Filter to instruments in this industry branch id, from list_branches. Optional.")]
         int? branchId = null,
-        [Description("Also include Börsdata's global (non-Nordic, Pro+) instrument universe " +
-            "alongside the default Nordic list, tagging each result isGlobal. Default false " +
-            "preserves the original Nordic-only output exactly (no isGlobal field appears at all " +
-            "unless this is true). The global list is large (~16,000 instruments) but cached the " +
-            "same way as the Nordic list, so repeated calls only pay the extra fetch once per week.")]
-        bool includeGlobal = false,
-        [Description("Maximum number of matching instruments to return. Omit to return all matches.")]
-        int? maxCount = null,
+        [Description("Instrument population: 'nordic' (default), 'global' (non-Nordic, Pro+), or 'all'. Only the required Börsdata data source is fetched.")]
+        string? universe = null,
+        [Description("Sort field: 'ticker' (default) or 'name'. Sorting is case-insensitive and insId is the deterministic tie-breaker.")]
+        string? sortBy = null,
+        [Description("Sort direction: 'asc' (default) or 'desc'.")]
+        string? sortDirection = null,
+        [Description("Results per page. Default 50; maximum 200.")]
+        int? pageSize = null,
         CancellationToken cancellationToken = default)
     {
-        var instruments = await client.GetInstrumentsAsync(cancellationToken);
-        var globalInstruments = includeGlobal ? await client.GetGlobalInstrumentsAsync(cancellationToken) : null;
-        return FilterInstruments(instruments, globalInstruments, search, marketId, countryId, sectorId, branchId, maxCount).ToJsonString();
+        if (cursor is not null)
+        {
+            if (search is not null || marketId is not null || countryId is not null || sectorId is not null ||
+                branchId is not null || universe is not null || sortBy is not null || sortDirection is not null ||
+                pageSize is not null)
+            {
+                throw InvalidRequest("When cursor is supplied, no other search, sorting, or paging parameters may be supplied.");
+            }
+
+            return RenderInstrumentPage(pagination.GetNextPage<JsonObject>(SearchInstrumentsCursorOwner, cursor));
+        }
+
+        var selectedUniverse = universe ?? "nordic";
+        if (selectedUniverse is not ("nordic" or "global" or "all"))
+            throw InvalidRequest("universe must be 'nordic', 'global', or 'all'.");
+
+        JsonNode? instruments = null;
+        JsonNode? globalInstruments = null;
+        if (selectedUniverse is "nordic" or "all")
+            instruments = await client.GetInstrumentsAsync(cancellationToken);
+        if (selectedUniverse is "global" or "all")
+            globalInstruments = await client.GetGlobalInstrumentsAsync(cancellationToken);
+
+        var matched = FilterAndSortInstruments(
+            instruments, globalInstruments, selectedUniverse, search, marketId, countryId,
+            sectorId, branchId, sortBy, sortDirection);
+        return RenderInstrumentPage(pagination.CreatePage(SearchInstrumentsCursorOwner, matched, pageSize));
     }
 
-    private static JsonObject FilterInstruments(
-        JsonNode? root, JsonNode? globalRoot, string? search, int? marketId, int? countryId,
-        int? sectorId, int? branchId, int? maxCount)
+    private static List<JsonObject> FilterAndSortInstruments(
+        JsonNode? root, JsonNode? globalRoot, string universe, string? search, int? marketId,
+        int? countryId, int? sectorId, int? branchId, string? sortBy, string? sortDirection)
     {
         // Börsdata wraps the array in an envelope object, e.g. { "instruments": [ ... ] },
         // rather than returning a bare JSON array.
@@ -60,14 +86,17 @@ public static class ReferenceDataTools
         // insId is assumed unique across the Nordic and global universes (confirmed live: global
         // insIds start at 10054+, well above the Nordic range), so no de-duplication is needed.
         IEnumerable<JsonObject> query;
-        if (globalRoot is not null)
+        if (universe == "all")
         {
-            // Only tag isGlobal when global data is actually in play, so includeGlobal=false
-            // produces byte-identical output to before this feature existed.
             var allGlobal = (globalRoot as JsonObject)?["instruments"] as JsonArray ?? [];
             var nordic = CloneAll(all).Select(o => { o["isGlobal"] = false; return o; });
             var global = CloneAll(allGlobal).Select(o => { o["isGlobal"] = true; return o; });
             query = nordic.Concat(global);
+        }
+        else if (universe == "global")
+        {
+            var allGlobal = (globalRoot as JsonObject)?["instruments"] as JsonArray ?? [];
+            query = CloneAll(allGlobal);
         }
         else
         {
@@ -85,20 +114,26 @@ public static class ReferenceDataTools
         if (branchId is not null)
             query = query.Where(o => GetInt(o, "branchId") == branchId);
 
-        var matched = query.ToList();
-        var take = maxCount ?? matched.Count;
+        return InstrumentSorting.Sort(
+            query,
+            sortBy,
+            sortDirection,
+            o => GetString(o, "ticker"),
+            o => GetString(o, "name"),
+            o => GetLong(o, "insId") ?? long.MaxValue);
+    }
 
-        // Entries are already freestanding clones from CloneAll() above (a JsonNode can only have
-        // one parent, so this cloning still has to happen somewhere before insertion into `page`
-        // below — it just happens earlier now, up front, rather than at paging time).
-        var page = new JsonArray(matched.Take(take).Select(o => (JsonNode)o).ToArray());
-
-        return new JsonObject
+    private static string RenderInstrumentPage(CursorPage<JsonObject> page)
+    {
+        var result = new JsonObject
         {
-            ["totalMatched"] = matched.Count,
-            ["returned"] = page.Count,
-            ["instruments"] = page
+            ["totalMatched"] = page.TotalMatched,
+            ["returned"] = page.Items.Count,
+            ["instruments"] = new JsonArray(page.Items.Select(o => (JsonNode)o.DeepClone()).ToArray())
         };
+        if (page.NextCursor is not null)
+            result["nextCursor"] = page.NextCursor;
+        return result.ToJsonString();
     }
 
     private static bool MatchesSearch(JsonObject instrument, string search) =>
@@ -112,6 +147,15 @@ public static class ReferenceDataTools
 
     private static int? GetInt(JsonObject instrument, string field) =>
         instrument[field] is JsonValue v && v.TryGetValue(out int i) ? i : null;
+
+    private static long? GetLong(JsonObject instrument, string field) =>
+        instrument[field] is JsonValue v && v.TryGetValue(out long i) ? i : null;
+
+    private static string? GetString(JsonObject instrument, string field) =>
+        instrument[field] is JsonValue v && v.TryGetValue(out string? value) ? value : null;
+
+    private static InvalidOperationException InvalidRequest(string detail) =>
+        new($"INVALID_REQUEST: {detail}");
 
     [McpServerTool, Description("Lists all markets known to Börsdata (e.g. Stockholm Large Cap, First North).")]
     public static async Task<string> ListMarkets(BorsdataApiClient client, CancellationToken cancellationToken) =>
@@ -149,7 +193,7 @@ public static class ReferenceDataTools
         "couldn't be resolved).")]
     public static async Task<string> GetInstrumentDescriptions(
         BorsdataApiClient client,
-        [Description("Comma-separated instrument insIds, from list_instruments. Max 50.")] string instrumentIds,
+        [Description("Comma-separated instrument insIds, from search_instruments. Max 50.")] string instrumentIds,
         CancellationToken cancellationToken) =>
         (await client.GetInstrumentDescriptionsAsync(instrumentIds, cancellationToken))?.ToJsonString() ?? "{}";
 

@@ -21,4 +21,8 @@
     <EmbeddedResource Include="Data/kpi-screener-options.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="BorsdataMcp.Tests" />
+  </ItemGroup>
+
 </Project>

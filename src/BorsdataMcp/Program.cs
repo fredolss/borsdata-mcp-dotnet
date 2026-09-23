@@ -16,6 +16,7 @@ builder.Services.AddMemoryCache();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<KpiHistoryCatalog>();
 builder.Services.AddSingleton<KpiScreenerCatalog>();
+builder.Services.AddSingleton<CursorPaginationService>();
 builder.Services.AddTransient<InstrumentScreeningService>();
 
 builder.Services.AddTransient<AuthKeyHandler>();

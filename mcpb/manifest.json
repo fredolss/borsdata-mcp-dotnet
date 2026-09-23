@@ -29,7 +29,7 @@
     }
   },
   "tools": [
-    { "name": "list_instruments", "description": "Lists instruments (stocks/funds) on Börsdata, with search and market/sector/country filters." },
+    { "name": "search_instruments", "description": "Searches Nordic/global instruments with metadata filters, sorting, and cursor-based pagination." },
     { "name": "list_markets", "description": "Lists all markets known to Börsdata." },
     { "name": "list_branches", "description": "Lists all industry branches known to Börsdata." },
     { "name": "list_sectors", "description": "Lists all sectors known to Börsdata." },
@@ -43,8 +43,8 @@
     { "name": "get_instruments_updated", "description": "Last-updated timestamps for recently-updated instruments." },
     { "name": "get_kpis_updated", "description": "The global timestamp for when KPI calculations were last refreshed." },
     { "name": "get_stock_prices", "description": "Daily stock price history for one instrument." },
-    { "name": "get_latest_stock_prices", "description": "The latest daily price for every instrument in one call." },
-    { "name": "get_stock_prices_by_date", "description": "Every instrument's price on a specific historical date." },
+    { "name": "get_latest_stock_prices", "description": "Latest available daily prices with sorting and cursor-based pagination." },
+    { "name": "get_stock_prices_by_date", "description": "Historical daily prices for a date with sorting and cursor-based pagination." },
     { "name": "get_kpi_screener", "description": "A calculated KPI value for one instrument." },
     { "name": "get_kpi_history", "description": "How a KPI has trended over time for one instrument." },
     { "name": "get_kpi_history_array", "description": "How a KPI has trended over time for a list of instruments." },

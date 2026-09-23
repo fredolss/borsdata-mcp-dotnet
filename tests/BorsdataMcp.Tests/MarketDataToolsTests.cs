@@ -1,9 +1,12 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using BorsdataMcp.Tools;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol;
+using ModelContextProtocol.Server;
 
 namespace BorsdataMcp.Tests;
 
@@ -167,6 +170,16 @@ public class MarketDataToolsTests
         stub = new RoutingStubHandler();
         var httpClient = new HttpClient(stub) { BaseAddress = new Uri("https://apiservice.borsdata.se/v1/") };
         return new BorsdataApiClient(httpClient, new MemoryCache(new MemoryCacheOptions()));
+    }
+
+    private static JsonNode AsJson(StockPricePageResult result) =>
+        JsonSerializer.SerializeToNode(result)!;
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public DateTimeOffset Now { get; private set; } = now;
+        public override DateTimeOffset GetUtcNow() => Now;
+        public void Advance(TimeSpan duration) => Now = Now.Add(duration);
     }
 
     [Fact]
@@ -395,7 +408,7 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetLatestStockPrices(client))!;
+        var result = AsJson(await MarketDataTools.GetLatestStockPrices(client, TestServices.CreatePagination()));
 
         Assert.Contains(stub.RequestUris, u => u.AbsolutePath == "/v1/instruments/stockprices/last");
         Assert.Equal(3, result["totalMatched"]!.GetValue<int>());
@@ -410,9 +423,95 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetLatestStockPrices(client, instrumentIds: "1,2"))!;
+        var result = AsJson(await MarketDataTools.GetLatestStockPrices(
+            client, TestServices.CreatePagination(), instrumentIds: "1,2"));
 
         Assert.Equal(2, result["totalMatched"]!.GetValue<int>());
+    }
+
+    [Theory]
+    [InlineData("ticker", "asc", new long[] { 2, 1, 999 })]
+    [InlineData("ticker", "desc", new long[] { 1, 2, 999 })]
+    [InlineData("name", "asc", new long[] { 2, 1, 999 })]
+    [InlineData("name", "desc", new long[] { 1, 2, 999 })]
+    public async Task GetLatestStockPrices_SortsByTickerOrName(string sortBy, string direction, long[] expected)
+    {
+        var client = CreateClient(out _);
+
+        var result = await MarketDataTools.GetLatestStockPrices(
+            client, TestServices.CreatePagination(), sortBy: sortBy, sortDirection: direction);
+
+        Assert.Equal(expected, result.Values.Select(value => value.InstrumentId));
+    }
+
+    [Fact]
+    public async Task GetLatestStockPrices_PaginatesSnapshotWithoutDuplicatesOrAdditionalApiCalls()
+    {
+        var client = CreateClient(out var stub);
+        var pagination = TestServices.CreatePagination();
+        var first = await MarketDataTools.GetLatestStockPrices(client, pagination, pageSize: 1);
+        var callsAfterFirstPage = stub.CallCount;
+        var second = await MarketDataTools.GetLatestStockPrices(
+            client, pagination, cursor: first.NextCursor);
+        var third = await MarketDataTools.GetLatestStockPrices(
+            client, pagination, cursor: second.NextCursor);
+
+        var ids = first.Values.Concat(second.Values).Concat(third.Values)
+            .Select(value => value.InstrumentId).ToArray();
+        Assert.Equal([2L, 1L, 999L], ids);
+        Assert.Equal(ids.Length, ids.Distinct().Count());
+        Assert.Null(third.NextCursor);
+        Assert.Equal(callsAfterFirstPage, stub.CallCount);
+    }
+
+    [Fact]
+    public async Task StockPriceCursors_AreToolScopedAndMustBeUsedAlone()
+    {
+        var client = CreateClient(out _);
+        var pagination = TestServices.CreatePagination();
+        var latest = await MarketDataTools.GetLatestStockPrices(client, pagination, pageSize: 1);
+
+        var wrongTool = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MarketDataTools.GetStockPricesByDate(client, pagination, cursor: latest.NextCursor));
+        var combined = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MarketDataTools.GetLatestStockPrices(client, pagination, cursor: latest.NextCursor, global: false));
+
+        Assert.StartsWith("CURSOR_EXPIRED:", wrongTool.Message);
+        Assert.StartsWith("INVALID_REQUEST:", combined.Message);
+    }
+
+    [Fact]
+    public async Task StockPriceCursor_CannotBeUsedBySearchInstruments()
+    {
+        var client = CreateClient(out _);
+        var pagination = TestServices.CreatePagination();
+        var latest = await MarketDataTools.GetLatestStockPrices(client, pagination, pageSize: 1);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            ReferenceDataTools.SearchInstruments(client, pagination, cursor: latest.NextCursor));
+
+        Assert.StartsWith("CURSOR_EXPIRED:", error.Message);
+    }
+
+    [Fact]
+    public async Task StockPriceTools_RejectExpiredCursorInvalidDateAndPageSize()
+    {
+        var client = CreateClient(out _);
+        var time = new MutableTimeProvider(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var pagination = TestServices.CreatePagination(timeProvider: time);
+        var first = await MarketDataTools.GetLatestStockPrices(client, pagination, pageSize: 1);
+
+        var badDate = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MarketDataTools.GetStockPricesByDate(client, pagination, date: "09/10/2026"));
+        var badPage = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MarketDataTools.GetLatestStockPrices(client, pagination, pageSize: 201));
+        time.Advance(TimeSpan.FromMinutes(16));
+        var expired = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MarketDataTools.GetLatestStockPrices(client, pagination, cursor: first.NextCursor));
+
+        Assert.StartsWith("INVALID_REQUEST:", badDate.Message);
+        Assert.StartsWith("INVALID_REQUEST:", badPage.Message);
+        Assert.StartsWith("CURSOR_EXPIRED:", expired.Message);
     }
 
     [Fact]
@@ -420,7 +519,7 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetLatestStockPrices(client))!;
+        var result = AsJson(await MarketDataTools.GetLatestStockPrices(client, TestServices.CreatePagination()));
 
         var unknown = result["values"]!.AsArray().Single(v => v!["i"]!.GetValue<int>() == 999)!;
         Assert.Null(unknown["name"]);
@@ -428,11 +527,12 @@ public class MarketDataToolsTests
     }
 
     [Fact]
-    public async Task GetLatestStockPrices_MaxCountCapsReturned_ButNotTotalMatched()
+    public async Task GetLatestStockPrices_PageSizeCapsReturned_ButNotTotalMatched()
     {
         var client = CreateClient(out _);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetLatestStockPrices(client, maxCount: 1))!;
+        var result = AsJson(await MarketDataTools.GetLatestStockPrices(
+            client, TestServices.CreatePagination(), pageSize: 1));
 
         Assert.Equal(3, result["totalMatched"]!.GetValue<int>());
         Assert.Equal(1, result["returned"]!.GetValue<int>());
@@ -480,7 +580,8 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetStockPricesByDate(client, date: "2026-09-10", instrumentIds: "1"))!;
+        var result = AsJson(await MarketDataTools.GetStockPricesByDate(
+            client, TestServices.CreatePagination(), date: "2026-09-10", instrumentIds: "1"));
 
         var dateRequest = stub.RequestUris.Single(u => u.AbsolutePath == "/v1/instruments/stockprices/date");
         Assert.Equal("date=2026-09-10", dateRequest.Query.TrimStart('?'));
@@ -488,12 +589,101 @@ public class MarketDataToolsTests
     }
 
     [Fact]
+    public async Task GetStockPricesByDate_CursorKeepsHistoricalSnapshotAndDate()
+    {
+        var client = CreateClient(out var stub);
+        var pagination = TestServices.CreatePagination();
+        var first = await MarketDataTools.GetStockPricesByDate(
+            client, pagination, date: "2026-09-10", pageSize: 1);
+        var callsAfterFirstPage = stub.CallCount;
+
+        var second = await MarketDataTools.GetStockPricesByDate(
+            client, pagination, cursor: first.NextCursor);
+
+        Assert.All(first.Values.Concat(second.Values), value => Assert.Equal("2026-09-11", value.Date));
+        Assert.Equal(callsAfterFirstPage, stub.CallCount);
+        Assert.Contains(stub.RequestUris, uri => uri.Query.Contains("date=2026-09-10"));
+    }
+
+    [Fact]
+    public async Task StockPriceResult_ContainsActualCompactFieldsAndOmitsTerminalCursor()
+    {
+        var client = CreateClient(out _);
+
+        var result = await MarketDataTools.GetLatestStockPrices(client, TestServices.CreatePagination());
+        var json = AsJson(result);
+        var value = json["values"]!.AsArray().Single(item => item!["i"]!.GetValue<long>() == 1)!;
+
+        Assert.Equal("2026-09-11", value["d"]!.GetValue<string>());
+        Assert.Equal(205.4, value["h"]!.GetValue<double>());
+        Assert.Equal(199.7, value["l"]!.GetValue<double>());
+        Assert.Equal(200.2, value["c"]!.GetValue<double>());
+        Assert.Equal(205.2, value["o"]!.GetValue<double>());
+        Assert.Equal(534031, value["v"]!.GetValue<long>());
+        Assert.Equal("VOLV B", value["ticker"]!.GetValue<string>());
+        Assert.Equal("Volvo B", value["name"]!.GetValue<string>());
+        Assert.Null(json["nextCursor"]);
+    }
+
+    [Fact]
+    public void StockPriceTools_AdvertiseStructuredOutputSchemaWithCompactFields()
+    {
+        var client = CreateClient(out _);
+        var pagination = TestServices.CreatePagination();
+        using var services = new ServiceCollection()
+            .AddSingleton(client)
+            .AddSingleton(pagination)
+            .BuildServiceProvider();
+
+        foreach (var methodName in new[] { nameof(MarketDataTools.GetLatestStockPrices), nameof(MarketDataTools.GetStockPricesByDate) })
+        {
+            var method = typeof(MarketDataTools).GetMethod(methodName)!;
+            var tool = McpServerTool.Create(
+                method, target: null, options: new McpServerToolCreateOptions { Services = services });
+            var inputProperties = JsonNode.Parse(tool.ProtocolTool.InputSchema.GetRawText())!["properties"]!;
+            var schema = JsonNode.Parse(tool.ProtocolTool.OutputSchema!.Value.GetRawText())!;
+            var properties = schema["properties"]!;
+            var itemSchema = properties["values"]!["items"]!;
+            var itemReference = itemSchema["$ref"]?.GetValue<string>();
+            var itemProperties = itemReference is null
+                ? itemSchema["properties"]!
+                : schema["$defs"]![itemReference.Split('/')[^1]]!["properties"]!;
+
+            Assert.NotNull(properties["totalMatched"]);
+            Assert.NotNull(properties["returned"]);
+            Assert.NotNull(properties["nextCursor"]);
+            Assert.DoesNotContain("nextCursor", schema["required"]!.AsArray().Select(item => item!.GetValue<string>()));
+            foreach (var field in new[] { "i", "ticker", "name", "d", "h", "l", "c", "o", "v" })
+                Assert.NotNull(itemProperties[field]);
+            Assert.Contains("integer", itemProperties["i"]!["type"]!.ToJsonString());
+            Assert.Contains("number", itemProperties["c"]!["type"]!.ToJsonString());
+            Assert.Contains("integer", itemProperties["v"]!["type"]!.ToJsonString());
+            Assert.Contains("null", itemProperties["v"]!["type"]!.ToJsonString());
+            Assert.Contains("string", itemProperties["d"]!["type"]!.ToJsonString());
+            Assert.Contains("null", itemProperties["d"]!["type"]!.ToJsonString());
+            Assert.Contains("null", itemProperties["h"]!["type"]!.ToJsonString());
+            Assert.Contains("null", itemProperties["l"]!["type"]!.ToJsonString());
+            Assert.Contains("null", itemProperties["o"]!["type"]!.ToJsonString());
+            Assert.Contains("not necessarily a real-time quote", itemProperties["c"]!["description"]!.GetValue<string>());
+            Assert.Null(itemProperties["currency"]);
+            Assert.Null(itemProperties["close"]);
+            Assert.NotNull(inputProperties["cursor"]);
+            Assert.NotNull(inputProperties["pageSize"]);
+            Assert.NotNull(inputProperties["sortBy"]);
+            Assert.NotNull(inputProperties["sortDirection"]);
+            Assert.Null(inputProperties["client"]);
+            Assert.Null(inputProperties["pagination"]);
+            Assert.Null(inputProperties["maxCount"]);
+        }
+    }
+
+    [Fact]
     public async Task GetLatestStockPrices_IsCached_DoesNotRefetchOnSecondCall()
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetLatestStockPrices(client);
-        await MarketDataTools.GetLatestStockPrices(client);
+        await MarketDataTools.GetLatestStockPrices(client, TestServices.CreatePagination());
+        await MarketDataTools.GetLatestStockPrices(client, TestServices.CreatePagination());
 
         // 1 latest-prices fetch (now cached — only changes once per trading day) + 1 instruments
         // fetch (also cached) = 2 total across both calls.
@@ -505,9 +695,9 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetStockPricesByDate(client, date: "2026-09-10");
-        await MarketDataTools.GetStockPricesByDate(client, date: "2026-09-10");
-        await MarketDataTools.GetStockPricesByDate(client, date: "2026-09-11");
+        await MarketDataTools.GetStockPricesByDate(client, TestServices.CreatePagination(), date: "2026-09-10");
+        await MarketDataTools.GetStockPricesByDate(client, TestServices.CreatePagination(), date: "2026-09-10");
+        await MarketDataTools.GetStockPricesByDate(client, TestServices.CreatePagination(), date: "2026-09-11");
 
         // Two distinct dates -> two distinct cache entries for the prices fetch, plus one shared,
         // cached instruments fetch: 2 (prices, one per date) + 1 (instruments) = 3, not 5.
@@ -519,7 +709,7 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        await MarketDataTools.GetLatestStockPrices(client);
+        await MarketDataTools.GetLatestStockPrices(client, TestServices.CreatePagination());
 
         Assert.All(stub.RequestUris, u => Assert.DoesNotContain("/global", u.AbsolutePath));
     }
@@ -529,7 +719,8 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetLatestStockPrices(client, global: true))!;
+        var result = AsJson(await MarketDataTools.GetLatestStockPrices(
+            client, TestServices.CreatePagination(), global: true));
 
         Assert.Contains(stub.RequestUris, u => u.AbsolutePath == "/v1/instruments/stockprices/global/last");
         Assert.Contains(stub.RequestUris, u => u.AbsolutePath == "/v1/instruments/global");
@@ -543,7 +734,8 @@ public class MarketDataToolsTests
     {
         var client = CreateClient(out var stub);
 
-        var result = JsonNode.Parse(await MarketDataTools.GetStockPricesByDate(client, date: "2026-09-11", global: true))!;
+        var result = AsJson(await MarketDataTools.GetStockPricesByDate(
+            client, TestServices.CreatePagination(), date: "2026-09-11", global: true));
 
         Assert.Contains(stub.RequestUris, u => u.AbsolutePath == "/v1/instruments/stockprices/global/date");
         Assert.Contains(stub.RequestUris, u => u.AbsolutePath == "/v1/instruments/global");
