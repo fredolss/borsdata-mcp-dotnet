@@ -4,5 +4,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BorsdataMcp.Tests/BorsdataMcp.Tests.csproj" />
+    <Project Path="tests/BorsdataMcp.IntegrationTests/BorsdataMcp.IntegrationTests.csproj" />
   </Folder>
 </Solution>

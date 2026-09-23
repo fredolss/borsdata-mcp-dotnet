@@ -27,6 +27,10 @@ follow a `<ClassUnderTest>Tests.cs` naming convention (see
 an example). Add or update tests for any behavior change, and run
 `dotnet test` before opening a PR.
 
+`tests/BorsdataMcp.IntegrationTests` spawns the real server as a subprocess and drives it with a
+real MCP client over stdio, against a local fake Börsdata HTTP server — see
+[README.md](README.md#building-and-testing) for what it covers and how to run just it.
+
 ## Architecture notes
 
 [CLAUDE.md](CLAUDE.md) documents the non-obvious design decisions in this
