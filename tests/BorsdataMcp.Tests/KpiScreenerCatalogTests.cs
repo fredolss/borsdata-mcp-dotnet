@@ -54,6 +54,17 @@ public class KpiScreenerCatalogTests
         Assert.Equal("cagr", option["calc"]!.GetValue<string>());
     }
 
+    [Fact]
+    public void LookupMatchesNumericTermGluedToLetterSuffixInDescription()
+    {
+        var result = JsonNode.Parse(new KpiScreenerCatalog().Search(null, "RSI 14", null))!;
+
+        Assert.Equal(1, result["totalMatched"]!.GetValue<int>());
+        var option = result["options"]![0]!;
+        Assert.Equal(159, option["kpiId"]!.GetValue<int>());
+        Assert.Equal("RSI", option["kpiName"]!.GetValue<string>());
+    }
+
     [Theory]
     [InlineData(null, null, null)]
     [InlineData(0, null, null)]
