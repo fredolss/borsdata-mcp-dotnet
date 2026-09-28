@@ -1,0 +1,240 @@
+---
+import Layout from "../layouts/Layout.astro";
+import Hero from "../components/Hero.astro";
+import GetStarted from "../components/GetStarted.astro";
+import ToolCatalog from "../components/ToolCatalog.astro";
+import { github } from "../data/content";
+const prompts = [
+  [
+    "01",
+    "Hitta bolag",
+    "Screena fram nordiska bolag med P/E under 10 och positiv vinsttillväxt över de senaste fem åren.",
+  ],
+  [
+    "02",
+    "Jämför bolag",
+    "Jämför rörelsemarginalen för Sandvik, SKF och Trelleborg kvartalsvis de senaste tre åren.",
+  ],
+  [
+    "03",
+    "Följ insiders",
+    "Visa insidertransaktioner som ökat innehavet med ett belopp över 1 MSEK i Volvo och Latour det senaste halvåret.",
+  ],
+  [
+    "04",
+    "Planera nästa analys",
+    "Vilka bolag i tekniksektorn har kommande rapportdatum inom de närmaste två veckorna?",
+  ],
+];
+const features = [
+  [
+    "⌕",
+    "Screena aktier",
+    "Kombinera flera KPI-villkor och avgränsa efter marknad, land, sektor eller bransch. Assistenten hjälper dig att tolka resultatet.",
+  ],
+  [
+    "↗",
+    "Analysera historik",
+    "Jämför dagliga aktiekurser och historiska nyckeltal. Kurserna är dagsdata, inte realtidskurser.",
+  ],
+  [
+    "▤",
+    "Finansiella rapporter",
+    "Utforska resultat, balansräkning och kassaflöde i års-, kvartals- och rullande tolvmånadersrapporter.",
+  ],
+  [
+    "⇄",
+    "Insider & blankning",
+    "Följ insidertransaktioner, aktieåterköp och nordiska blankningspositioner. Ökade insiderinnehav kan även vara tilldelningar.",
+  ],
+  [
+    "▦",
+    "Kalender & utdelningar",
+    "Hämta rapportdatum, utdelningarnas ex-datum och belopp. Utforska historiken eller se vad som redan är planerat.",
+  ],
+  [
+    "◎",
+    "Nordiskt & globalt",
+    "Sök och analysera nordiska och globala instrument. Tillgången styrs av ditt Börsdata-abonnemang och dess API-behörigheter.",
+  ],
+];
+---
+
+<Layout>
+  <header class="header">
+    <div class="container header-inner">
+      <a
+        class="brand"
+        href={import.meta.env.BASE_URL}
+        aria-label="Börsdata MCP, startsida"
+      >
+        <span class="brand-mark" aria-hidden="true">
+          ↗
+        </span>
+        Börsdata <span class="brand-suffix">MCP</span>
+      </a>
+      <nav aria-label="Huvudnavigation">
+        <a href="#funktioner">Funktioner</a>
+        <a href="#sa-fungerar-det">Så fungerar det</a>
+        <a href="#kom-igang">Kom igång</a>
+        <a href={github}>
+          GitHub <span aria-hidden="true">↗</span>
+        </a>
+      </nav>
+    </div>
+  </header>
+  <main id="main" class="container">
+    <Hero />
+    <div class="data-strip" aria-label="Tillgängliga datatyper">
+      {[
+        "Aktiekurser",
+        "KPI:er",
+        "Rapporter",
+        "Screening",
+        "Insiderhandel",
+        "Blankning",
+        "Utdelningar",
+        "Rapportkalender",
+      ].map((label) => (
+        <span>{label}</span>
+      ))}
+    </div>
+    <section aria-labelledby="prompts-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">MINDRE LETANDE. MER INSIKT.</p>
+          <h2 id="prompts-title">
+            Fråga Börsdata
+            <br />
+            med vanlig svenska.
+          </h2>
+        </div>
+        <p>
+          Börja med det du vill förstå. Din AI-assistent använder verktygen för
+          att hämta data och hjälpa dig med analysen.
+        </p>
+      </div>
+      <div class="prompt-grid">
+        {prompts.map(([number, title, prompt]) => (
+          <article class="prompt-card">
+            <div class="card-label">
+              <span>{title}</span>
+              <span>{number}</span>
+            </div>
+            <p>”{prompt}”</p>
+            <span class="prompt-arrow" aria-hidden="true">
+              ↗
+            </span>
+          </article>
+        ))}
+      </div>
+    </section>
+    <section id="funktioner" aria-labelledby="features-title">
+      <p class="eyebrow">FRÅN ÖVERBLICK TILL DETALJ</p>
+      <h2 id="features-title">
+        Ett nytt sätt att arbeta
+        <br />
+        med din börsdata.
+      </h2>
+      <div class="feature-grid">
+        {features.map(([icon, title, description]) => (
+          <article class="feature">
+            <span class="feature-icon" aria-hidden="true">
+              {icon}
+            </span>
+            <h3>{title}</h3>
+            <p>{description}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+    <section id="sa-fungerar-det" class="how" aria-labelledby="how-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">EN ENKEL KOPPLING</p>
+          <h2 id="how-title">Så fungerar det.</h2>
+        </div>
+        <p>
+          MCP (Model Context Protocol) låter AI-assistenter använda externa
+          verktyg. Börsdata MCP hämtar finansiell data som assistenten kan
+          använda i din analys.
+        </p>
+      </div>
+      <ol class="flow">
+        <li>
+          <span class="flow-icon" aria-hidden="true">
+            ✳
+          </span>
+          <h3>Din AI-assistent</h3>
+          <p>Du ställer frågan</p>
+        </li>
+        <li class="flow-connector" aria-hidden="true">
+          MCP<span>→</span>
+        </li>
+        <li class="flow-center">
+          <span class="flow-icon" aria-hidden="true">
+            ↗
+          </span>
+          <h3>Börsdata MCP</h3>
+          <p>Verktygen hämtar data</p>
+        </li>
+        <li class="flow-connector" aria-hidden="true">
+          Din API-nyckel<span>→</span>
+        </li>
+        <li>
+          <span class="flow-icon" aria-hidden="true">
+            ▥
+          </span>
+          <h3>Börsdata API</h3>
+          <p>Ditt kontos datatillgång</p>
+        </li>
+      </ol>
+      <p class="small flow-note">
+        Servern körs hos dig och ansluter till din MCP-klient via stdio. Den här
+        webbplatsen tar inte emot din API-nyckel.
+      </p>
+    </section>
+    <GetStarted />
+    <ToolCatalog />
+    <section class="open-source" aria-labelledby="open-title">
+      <p class="eyebrow">ÖPPEN KÄLLKOD. ÖPPNA MÖJLIGHETER.</p>
+      <h2 id="open-title">
+        Byggt för nyfikna investerare.
+        <br />
+        <em>Och deras AI-assistenter.</em>
+      </h2>
+      <p>
+        Utforska koden, föreslå förbättringar eller bygg vidare.
+        <br />
+        Börsdata MCP är fritt att använda under MIT-licensen.
+      </p>
+      <div class="actions">
+        <a class="button primary" href={github}>
+          Utforska på GitHub <span aria-hidden="true">↗</span>
+        </a>
+        <a class="button" href="#kom-igang">
+          Kom igång
+        </a>
+      </div>
+    </section>
+  </main>
+  <footer class="container">
+    <div class="footer-top">
+      <a class="brand" href={import.meta.env.BASE_URL}>
+        Börsdata <span class="brand-suffix">MCP</span>
+      </a>
+      <div>
+        <a href={`${github}/blob/main/LICENSE`}>MIT-licens</a>
+        <a href={github}>GitHub ↗</a>
+      </div>
+    </div>
+    <p>
+      Börsdata MCP är ett inofficiellt, communitybyggt projekt och är inte
+      anslutet till, godkänt av eller sponsrat av Börsdata AB. ”Börsdata” är ett
+      varumärke som tillhör Börsdata AB och används här endast för att beskriva
+      kompatibilitet med deras publika API. Du ansvarar för ditt eget
+      abonnemang, din API-nyckel och att följa Börsdatas villkor. Programvaran
+      tillhandahålls i befintligt skick, utan garantier.
+    </p>
+  </footer>
+</Layout>

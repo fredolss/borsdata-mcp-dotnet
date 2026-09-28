@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://fredolss.github.io/borsdata-mcp-dotnet/sitemap-index.xml

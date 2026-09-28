@@ -1,0 +1,40 @@
+---
+import "../styles/global.css";
+const title = "Börsdata MCP – Börsdata direkt i din AI-assistent";
+const description =
+  "Screena, jämför och analysera aktier med vanlig svenska. En öppen MCP-server för Börsdatas kurser, nyckeltal, rapporter och insiderdata. Använd din egen API-nyckel.";
+const canonical = new URL(import.meta.env.BASE_URL, Astro.site);
+---
+
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0b1218" />
+    <link rel="canonical" href={canonical} />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href={`${import.meta.env.BASE_URL}favicon.svg`}
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="sv_SE" />
+    <meta property="og:site_name" content="Börsdata MCP" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+  </head>
+  <body>
+    <a class="skip" href="#main">
+      Hoppa till innehållet
+    </a>
+    <slot />
+  </body>
+</html>

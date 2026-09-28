@@ -1,5 +1,7 @@
 # Börsdata MCP Server
 
+🌐 [Website](https://fredolss.github.io/borsdata-mcp-dotnet/)
+
 [![Build](https://github.com/fredolss/borsdata-mcp-dotnet/actions/workflows/build.yml/badge.svg)](https://github.com/fredolss/borsdata-mcp-dotnet/actions/workflows/build.yml)
 
 A Model Context Protocol (MCP) server, written in .NET, that exposes the

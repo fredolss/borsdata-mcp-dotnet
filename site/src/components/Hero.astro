@@ -1,0 +1,96 @@
+---
+import { github } from "../data/content";
+---
+
+<section class="hero" aria-labelledby="hero-title">
+  <div>
+    <p class="eyebrow">
+      <span class="status-dot" aria-hidden="true"></span> FINANSIELL DATA.
+      NATURLIGT SPRÅK.
+    </p>
+    <h1 id="hero-title">
+      Börsdata direkt
+      <br />i din <em>AI-assistent.</em>
+    </h1>
+    <p class="lead">
+      Screena, jämför och analysera aktier med vanlig svenska. Börsdata MCP
+      kopplar din AI-assistent till Börsdata API.
+    </p>
+    <div class="actions">
+      <a class="button primary" href="#kom-igang">
+        Kom igång <span aria-hidden="true">↗</span>
+      </a>
+      <a class="button" href={github}>
+        Visa på GitHub <span aria-hidden="true">↗</span>
+      </a>
+    </div>
+    <p class="small account">
+      Du använder ditt eget Börsdata-konto med API-åtkomst
+      <br class="desktop-break" /> och din egen API-nyckel.
+    </p>
+    <p class="stack">
+      Open source <span> / </span> .NET <span> / </span> MCP <span> / </span>{" "}
+      MIT
+    </p>
+  </div>
+  <div class="chat">
+    <div class="window-bar">
+      <span class="window-dots" aria-hidden="true">
+        ● ● ●
+      </span>
+      <span>en fråga. många möjligheter.</span>
+      <span aria-hidden="true">↗</span>
+    </div>
+    <div class="chat-body">
+      <div class="speaker">
+        <span class="avatar">DU</span>
+        <span>Din nästa analys börjar här</span>
+      </div>
+      <p class="prompt">
+        Hitta nordiska bolag med P/E under 10 och positiv vinsttillväxt över fem
+        år.
+      </p>
+      <div class="chat-divider"></div>
+      <div class="speaker">
+        <span class="avatar ai" aria-hidden="true">
+          ✳
+        </span>
+        <span>AI-assistent</span>
+        <span class="tag">Börsdata MCP</span>
+      </div>
+      <p>Här är ett exempel på hur resultatet kan se ut:</p>
+      <table>
+        <caption>Illustrativt exempel – påhittade bolag och värden</caption>
+        <thead>
+          <tr>
+            <th>Bolag</th>
+            <th>P/E</th>
+            <th>Vinsttillväxt¹</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Exempelbolag A</td>
+            <td>8,4</td>
+            <td class="positive">+12,1 %</td>
+          </tr>
+          <tr>
+            <td>Exempelbolag B</td>
+            <td>9,1</td>
+            <td class="positive">+8,7 %</td>
+          </tr>
+          <tr>
+            <td>Exempelbolag C</td>
+            <td>7,6</td>
+            <td class="positive">+6,3 %</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="small">¹ Genomsnittlig årlig tillväxt över fem år.</p>
+    </div>
+    <div class="chat-bottom">
+      <span class="status-dot" aria-hidden="true"></span> Från din fråga till
+      strukturerad data
+    </div>
+  </div>
+</section>
