@@ -1,0 +1,38 @@
+---
+import { toolGroups } from "../data/content";
+---
+
+<section id="verktyg" aria-labelledby="tools-title">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">UNDER HUVEN</p>
+      <h2 id="tools-title">
+        Små verktyg.
+        <br />
+        Stora möjligheter.
+      </h2>
+    </div>
+    <p>
+      32 MCP-verktyg ger din assistent tillgång till data för nästa fråga. Här
+      är hela verktygslådan.
+    </p>
+  </div>
+  <div class="tools-grid">
+    {toolGroups.map((group) => (
+      <article class="tool-group">
+        <h3>
+          {group.title}
+          <span>{String(group.tools.length).padStart(2, "0")}</span>
+        </h3>
+        <ul>
+          {group.tools.map((tool) => (
+            <li>
+              <code>{tool.name}</code>
+              <p>{tool.description}</p>
+            </li>
+          ))}
+        </ul>
+      </article>
+    ))}
+  </div>
+</section>

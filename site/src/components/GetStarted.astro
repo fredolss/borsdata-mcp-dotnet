@@ -1,0 +1,66 @@
+---
+import { github } from "../data/content";
+---
+
+<section id="kom-igang" aria-labelledby="start-title">
+  <p class="eyebrow">DIN DATA. DIN ASSISTENT.</p>
+  <h2 id="start-title">Kom igång på några minuter.</h2>
+  <p class="section-intro">
+    Du behöver en MCP-kompatibel AI-assistent och ett eget Börsdata-konto med
+    API-åtkomst. Ingen prenumeration eller API-nyckel ingår.
+  </p>
+  <ol class="steps">
+    <li>
+      <span>01</span>Installera Börsdata MCP
+    </li>
+    <li>
+      <span>02</span>Lägg till din API-nyckel
+    </li>
+    <li>
+      <span>03</span>Börja fråga din assistent
+    </li>
+  </ol>
+  <div class="install-grid">
+    <article class="card recommended">
+      <p class="eyebrow">ENKLAST · CLAUDE DESKTOP</p>
+      <h3>En fil. Sedan är du igång.</h3>
+      <p>
+        Hämta ett <code>.mcpb</code>-paket för ditt operativsystem från
+        projektets releases. Installera det i Claude Desktop under Settings →
+        Extensions och ange din Börsdata API-nyckel när du blir tillfrågad.
+      </p>
+      <div class="platforms">
+        <span>Linux x64</span>
+        <span>Windows x64</span>
+        <span>macOS Intel + Apple Silicon</span>
+      </div>
+      <p class="small">
+        De självständiga paketen inkluderar .NET. Portable-alternativet kräver
+        .NET 10 runtime. Linux är verifierat från början till slut; Windows och
+        macOS är ännu inte det enligt projektets dokumentation.
+      </p>
+      <a class="text-link" href={`${github}/releases`}>
+        Hämta Desktop Extension <span aria-hidden="true">↗</span>
+      </a>
+    </article>
+    <article class="card">
+      <p class="eyebrow">FÖR UTVECKLARE</p>
+      <h3>Kör från källkoden.</h3>
+      <p>
+        Klona repot och installera .NET 10 SDK. Lägg din nyckel i{" "}
+        <code>Borsdata__ApiKey</code> via klientens miljövariabler, eller i en
+        lokal <code>.env</code> för utvecklingsskriptet.
+      </p>
+      <pre><code>git clone https://github.com/fredolss/borsdata-mcp-dotnet.git
+cd borsdata-mcp-dotnet
+dotnet run --project src/BorsdataMcp</code></pre>
+      <p class="small">
+        Låt MCP-klienten starta servern över stdio med kommandot ovan och repot
+        som arbetskatalog. Servern väntar på klientens anrop.
+      </p>
+      <a class="text-link" href={`${github}#using-with-claude-desktop`}>
+        Läs installationsguiden <span aria-hidden="true">↗</span>
+      </a>
+    </article>
+  </div>
+</section>
