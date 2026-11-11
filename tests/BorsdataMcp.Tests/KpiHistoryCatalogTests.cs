@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Fredrik Olsson
+
 using System.Text.Json.Nodes;
 using BorsdataMcp.Tools;
 
