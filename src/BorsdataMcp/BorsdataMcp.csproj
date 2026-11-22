@@ -7,6 +7,21 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Embedded file version info (ProductName/ProductVersion on Windows). Kept consistent for
+       code signing: Product matches the project name, and ProductVersion is exactly Version
+       (no "+<commit sha>" suffix). Release builds override Version with the tag's version via
+       -p:Version=... in .github/workflows/build.yml; 0.0.0 marks a local/dev build. -->
+  <PropertyGroup>
+    <Product>borsdata-mcp-dotnet</Product>
+    <AssemblyTitle>borsdata-mcp-dotnet</AssemblyTitle>
+    <Description>MCP server for the Börsdata financial data API</Description>
+    <Authors>Fredrik Olsson</Authors>
+    <Company>Fredrik Olsson</Company>
+    <Copyright>Copyright (c) 2026 Fredrik Olsson</Copyright>
+    <Version>0.0.0</Version>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
