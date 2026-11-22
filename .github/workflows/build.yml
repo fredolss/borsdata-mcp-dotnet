@@ -173,7 +173,10 @@ jobs:
           path: mcpb/borsdata-mcp-${{ env.sha }}-osx-universal.mcpb
 
   # Runs only when a `v*` tag is pushed — a deliberate, versioned release.
-  # Publishes a public GitHub Release with the .mcpb attached.
+  # Creates the GitHub Release as a *draft* with the .mcpb packages built here
+  # attached; `release-macos` and `release-windows` add their packages to that
+  # draft, and `publish-release` makes it public only once every asset is there,
+  # so a failed or slow job never leaves a public release missing a platform.
   release:
     needs: test
     if: startsWith(github.ref, 'refs/tags/')
@@ -227,7 +230,8 @@ jobs:
             "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-portable.mcpb" \
             "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-linux-x64.mcpb" \
             --title "$GITHUB_REF_NAME" \
-            --generate-notes
+            --generate-notes \
+            --draft
 
   # Builds the macOS universal binary and attaches it to the release created
   # by `release` above — needs both `test` and `release` since the release
@@ -294,7 +298,9 @@ jobs:
     needs: [test, release]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
-    timeout-minutes: 20
+    # Long enough to cover SignPath's wait-for-completion (up to 60 min while a
+    # signing request waits for manual approval) on top of the build itself.
+    timeout-minutes: 75
     permissions:
       contents: write
       # Needed by SignPath's action to download the unsigned artifact.
@@ -380,3 +386,19 @@ jobs:
         run: |
           gh release upload "$GITHUB_REF_NAME" \
             "mcpb/borsdata-mcp-${GITHUB_REF_NAME}-win-x64.mcpb"
+
+  # Makes the draft release created by `release` public, only after every
+  # platform's asset job has succeeded. If any of them fails, the release stays
+  # a draft (fix and re-run the failed job, then this one runs).
+  publish-release:
+    needs: [release, release-macos, release-windows]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the draft GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
