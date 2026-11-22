@@ -230,14 +230,6 @@ prompted (collected by the install UI, not read from `.env`).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get set up and submit changes.
 
-## Code signing
-
-Windows release binaries are signed via SignPath. Free code signing provided
-by [SignPath.io](https://about.signpath.io/), certificate by
-[SignPath Foundation](https://signpath.org/). See
-[CODE_SIGNING_POLICY.md](CODE_SIGNING_POLICY.md) for the signing policy, team
-roles and privacy policy.
-
 ## License
 
 [MIT](LICENSE)
